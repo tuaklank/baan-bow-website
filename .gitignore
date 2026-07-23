@@ -1,1 +1,5 @@
 assets/
+
+# Design tool assets are required for the site to render (car photos, masks, logo)
+!design-tool/assets/
+!design-tool/assets/**
