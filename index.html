@@ -383,6 +383,19 @@
 </footer>
 
 <script>
+  // hero video plays slowed down: the clean window of the source footage is
+  // only 1.4s, so the ping-pong loop is short. HERO_RATE stretches it.
+  // Set on loadedmetadata and again on canplay -- some browsers reset
+  // playbackRate when a looping video wraps.
+  const HERO_RATE = 0.5;
+  (function(){
+    const v = document.querySelector('.hero-video');
+    if(!v) return;
+    const rate = ()=>{ if(v.playbackRate !== HERO_RATE) v.playbackRate = HERO_RATE; };
+    rate();
+    ['loadedmetadata','canplay','play','seeked','timeupdate'].forEach(e=>v.addEventListener(e, rate));
+  })();
+
   // mobile menu toggle
   const toggle = document.getElementById('menuToggle');
   const navLinks = document.querySelector('nav.links');
