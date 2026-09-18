@@ -1,0 +1,575 @@
+  /* ==========================================================================
+     DESIGN TOKENS
+     Two scopes, per the 2026 design:
+       :root        -> landing page. Deep blue, Baloo Thai 2 + IBM Plex Sans Thai.
+       .theme-craft -> bow design tool. Warm paper, Trirong.
+     Header, footer, the back-to-home link and every primary button use the
+     :root set on BOTH pages so the two read as one site.
+     Never hardcode a colour below; add a token instead.
+     ========================================================================== */
+  :root{
+    /* --- brand ------------------------------------------------------------ */
+    --brand-deep:#22407C;        /* headings, footer, dark bands */
+    --brand-deep-end:#1B3468;    /* gradient end of the dark band */
+    --brand:#1B6FD1;             /* primary action */
+    --accent-light:#8FB8EE;      /* accent on dark */
+    --muted-light:#BFD4F2;       /* secondary text on dark */
+
+    /* --- surfaces --------------------------------------------------------- */
+    --page:#F4F6F9;
+    --surface:#fff;
+    --tint:#EAF1FA;              /* badge / success fill */
+    --input-bg:#F7F9FC;
+    --media-bg:#E4EAF2;          /* placeholder behind img/video */
+
+    /* --- lines ------------------------------------------------------------ */
+    --border:#D7DFEA;
+    --border-dashed:#B9C7DA;
+    --border-success:#B9D2F0;
+    --dot-idle:#C6D3E4;
+
+    /* --- text ------------------------------------------------------------- */
+    --ink:#131A2E;
+    --text-2:#5A6478;
+    --text-3:#8992A5;
+
+    /* --- rgb channels, for rgba() overlays -------------------------------- */
+    --scrim-rgb:19,26,46;
+    --brand-deep-rgb:34,64,124;
+    --brand-rgb:27,111,209;
+
+    /* --- type ------------------------------------------------------------- */
+    --font-display:'Baloo Thai 2',sans-serif;
+    --font-body:'IBM Plex Sans Thai',sans-serif;
+    --font-craft:'Trirong',serif;
+
+    --fs-h1:clamp(38px,6.6vw,82px);
+    --fs-h2:clamp(30px,4vw,48px);
+    --fs-h3:clamp(26px,3.2vw,38px);
+    --fs-card-title:clamp(22px,2.4vw,30px);
+    --fs-price:30px;
+    --fs-lead:clamp(15px,1.6vw,19px);
+    --fs-body:16px;
+    --fs-small:14.5px;
+    --fs-label:13px;
+    --fs-eyebrow:12.5px;
+
+    /* --- space ------------------------------------------------------------ */
+    --gutter:28px;
+    --content-max:1180px;
+    --card-gap:30px;
+    --grid-gap:14px;
+
+    /* --- radii ------------------------------------------------------------ */
+    --r-pill:999px;
+    --r-card:22px;
+    --r-form:20px;
+    --r-tile:14px;
+    --r-input:11px;
+    --r-badge:10px;
+
+    /* --- shadows ---------------------------------------------------------- */
+    --sh-media:0 22px 50px rgba(34,64,124,.16);
+    --sh-form:0 18px 40px rgba(34,64,124,.1);
+    --sh-cta:0 14px 34px rgba(27,111,209,.4);
+    --sh-arrow:0 10px 26px rgba(34,64,124,.18);
+    --sh-tile:0 2px 10px rgba(27,58,110,.08);
+
+    /* --- legacy aliases ---------------------------------------------------
+       The pre-2026 stylesheet is written against these names. Pointing them at
+       the new palette recolours every section at once; each section then drops
+       its alias as it is rebuilt. Do not introduce new uses of these. */
+    --red:var(--brand);
+    --red-dark:var(--brand-deep);
+    --red-darker:var(--brand-deep);
+    --gold:var(--accent-light);
+    --gold-light:var(--muted-light);
+    --cream:var(--page);
+    --paper:var(--surface);
+    --ink-soft:var(--text-2);
+    --blush:var(--tint);
+    --shadow:var(--sh-media);
+  }
+
+  /* Bow design tool: its own warm-paper palette and serif, by design.
+     Shared chrome (header, footer, primary buttons) keeps the :root tokens. */
+  /* Solid header variant: the tool page has no hero behind the bar, so it is
+     a filled brand band instead of a scrim over video. */
+  .header-solid{position:static;background:var(--brand-deep);backdrop-filter:none;}
+
+  .theme-craft{
+    --craft-ink:#2a241d;
+    --craft-accent:#c62828;
+    --craft-gold:#b1852f;
+    --craft-gold-dark:#8a6420;
+    --craft-paper:#f4efe7;
+    --craft-surface:#fff;
+    --craft-chip:#f0e9dc;
+    --craft-chip-ink:#5b4f3c;
+    --craft-selection:#e7d5ad;
+    --craft-size-on:#fbf6ec;
+    --craft-size-off:#f6f2ea;
+    --craft-track-off:#cfc6b6;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--cream);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-weight:400;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  h1,h2,h3{
+    font-family:var(--font-display);
+    font-weight:700;
+    margin:0;
+    color:var(--brand-deep);
+    line-height:1.3;
+  }
+  .nav-label, .btn, .eyebrow, .tag, .step-num, .foot-label, .logo-word{
+    font-family:var(--font-body);
+  }
+  a{color:inherit;text-decoration:none;}
+  img{max-width:100%;display:block;}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px;}
+  /* The 2026 eyebrow is plain letterspaced text -- the gold rule that used to
+     precede it belonged to the old identity. */
+  .eyebrow{
+    font-size:var(--fs-eyebrow);
+    letter-spacing:3px;
+    font-weight:400;
+    color:var(--brand);
+    margin-bottom:14px;
+  }
+  section{position:relative;}
+
+  /* ---------- REVEAL ---------- */
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease, transform .7s ease;}
+  .reveal.is-visible{opacity:1;transform:translateY(0);}
+
+  /* ---------- NAV ----------
+     Fixed and transparent: it sits over the full-bleed hero video, which
+     supplies its own dark scrim. The gradient keeps the links legible on
+     whatever frame is showing. */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:40;
+    background:linear-gradient(180deg,rgba(var(--scrim-rgb),.72),rgba(var(--scrim-rgb),0));
+    backdrop-filter:blur(6px);
+  }
+  .nav-inner{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:14px var(--gutter);max-width:var(--content-max);margin:0 auto;
+  }
+  .brand{display:flex;align-items:center;gap:11px;}
+  .brand img{
+    width:44px;height:44px;border-radius:50%;
+    object-fit:contain;background:#fff;   /* logo art is transparent; white backing keeps it round */
+  }
+  .brand-text{
+    font-family:var(--font-display);font-weight:700;font-size:19px;
+    letter-spacing:2.6px;color:#fff;line-height:1;white-space:nowrap;
+  }
+  nav.links{display:flex;gap:26px;align-items:center;}
+  nav.links a{
+    font-family:var(--font-body);font-size:14px;font-weight:400;
+    color:rgba(255,255,255,.86);padding:4px 0;transition:color .2s ease;
+  }
+  nav.links a:hover{color:#fff;}
+  .nav-cta{display:flex;align-items:center;gap:14px;}
+
+  /* ---------- BUTTONS ----------
+     One set for the whole site; the design tool page uses these unchanged so
+     both pages read as one brand. */
+  .btn{
+    font-family:var(--font-body);font-weight:700;font-size:16px;
+    padding:16px 30px;border-radius:var(--r-pill);
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    cursor:pointer;border:none;transition:transform .2s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+    white-space:nowrap;line-height:1;
+  }
+  .btn-primary{background:var(--brand);color:#fff;box-shadow:var(--sh-cta);}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 18px 40px rgba(var(--brand-rgb),.5);}
+  /* on dark backgrounds */
+  .btn-ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);font-weight:600;padding:15px 28px;}
+  .btn-ghost:hover{border-color:#fff;background:rgba(255,255,255,.1);}
+  /* inverse, for use on the deep-blue band */
+  .btn-light{background:#fff;color:var(--brand-deep);font-size:15.5px;padding:14px 28px;}
+  .btn-light:hover{transform:translateY(-2px);}
+  /* compact variant, used in the nav */
+  .btn-sm{font-size:14px;font-weight:600;padding:10px 18px;box-shadow:none;}
+  .btn-sm:hover{transform:none;box-shadow:0 8px 20px rgba(var(--brand-rgb),.45);}
+
+  .menu-toggle{display:none;background:none;border:none;font-size:26px;color:#fff;cursor:pointer;line-height:1;padding:0 2px;}
+
+  /* ---------- HERO ----------
+     Full-bleed looping video with the content bottom-aligned over it. The
+     1400px breakpoint that used to protect the design-tool iframe is gone:
+     the tool now lives on its own page. */
+  .hero{
+    position:relative;
+    min-height:100vh;
+    min-height:100svh;      /* avoids the mobile URL-bar jump */
+    display:flex;align-items:flex-end;
+    overflow:hidden;
+    background:var(--brand-deep);   /* shows while the video decodes */
+  }
+  .hero-video{
+    position:absolute;inset:0;
+    width:100%;height:100%;
+    object-fit:cover;
+    z-index:0;
+  }
+  .hero-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;}
+  .hero-scrim-v{
+    background:linear-gradient(180deg,
+      rgba(var(--scrim-rgb),.6) 0%,
+      rgba(var(--brand-deep-rgb),.26) 30%,
+      rgba(var(--scrim-rgb),.82) 72%,
+      var(--brand-deep) 100%);
+  }
+  .hero-scrim-h{
+    background:linear-gradient(90deg,
+      rgba(var(--brand-deep-rgb),.9) 0%,
+      rgba(var(--brand-deep-rgb),.62) 38%,
+      rgba(var(--brand-deep-rgb),.12) 66%,
+      rgba(var(--brand-deep-rgb),0) 82%);
+  }
+  .hero-content{position:relative;z-index:2;width:100%;padding-top:108px;padding-bottom:96px;}
+
+  .eyebrow-pill{
+    display:inline-flex;align-items:center;gap:9px;
+    border:1px solid rgba(255,255,255,.42);border-radius:var(--r-pill);
+    color:#fff;font-size:var(--fs-eyebrow);letter-spacing:2.4px;
+    padding:7px 15px;margin-bottom:24px;
+  }
+  .hero h1{
+    font-size:var(--fs-h1);font-weight:800;line-height:1.28;letter-spacing:-.5px;
+    color:#fff;margin:0 0 20px;text-wrap:balance;
+  }
+  .hero h1 span{color:var(--accent-light);}
+  .hero p.lead{
+    font-size:var(--fs-lead);line-height:1.65;color:rgba(255,255,255,.84);
+    max-width:560px;margin:0 0 34px;text-wrap:pretty;
+  }
+  .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
+
+  .stats{
+    display:flex;flex-wrap:wrap;gap:38px;
+    margin-top:52px;padding-top:28px;
+    border-top:1px solid rgba(255,255,255,.22);
+  }
+  .stat-n{font-family:var(--font-display);font-size:32px;font-weight:700;color:#fff;line-height:1.25;}
+  .stat-l{font-size:var(--fs-label);color:rgba(255,255,255,.7);margin-top:5px;}
+
+  @media (prefers-reduced-motion:reduce){
+    .hero-video{display:none;}   /* the poster stays via the section background */
+    .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
+  }
+  /* ---------- TRUST MARQUEE ----------
+     Kept from the pre-2026 site (the design has no equivalent), repainted onto
+     the new palette. */
+  .trust{
+    background:var(--brand-deep);
+    color:var(--muted-light);
+    padding:20px 0;
+    overflow:hidden;
+  }
+  .trust .label{
+    text-align:center;font-family:var(--font-body);font-size:var(--fs-eyebrow);
+    letter-spacing:3px;color:var(--accent-light);margin-bottom:12px;font-weight:400;
+  }
+  .marquee{display:flex;white-space:nowrap;overflow:hidden;}
+  .marquee-track{display:flex;gap:52px;animation:scroll 26s linear infinite;padding-right:52px;align-items:center;}
+  .marquee-track span{
+    font-family:var(--font-display);font-weight:600;font-size:20px;color:#fff;opacity:.9;letter-spacing:.02em;
+  }
+  .marquee-track span.dot{color:var(--accent-light);font-family:var(--font-body);}
+  @keyframes scroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+  @media (prefers-reduced-motion:reduce){
+    .marquee-track{animation:none;}
+  }
+
+  /* ---------- SECTION HEAD (shared) ---------- */
+  .section-head{max-width:640px;margin-bottom:40px;}
+  .section-head h2{font-size:var(--fs-h2);}
+  .section-head p{color:var(--text-2);margin-top:16px;font-size:var(--fs-body);line-height:1.7;max-width:560px;}
+
+  /* ---------- PRODUCT SHOWROOM ----------
+     Native scroll-snap carousel. Arrows and dots only reposition the scroll;
+     the scroller itself is the source of truth for which card is active, so
+     drag, wheel, keyboard and the buttons can never disagree. */
+  .products{padding:110px 0 40px;}
+  .products .eyebrow{letter-spacing:3px;font-size:var(--fs-eyebrow);color:var(--brand);}
+
+  .slider{position:relative;}
+  .slider-track{
+    display:flex;gap:var(--card-gap);
+    overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;scroll-behavior:smooth;
+    padding:6px 2px 30px;
+    cursor:grab;touch-action:pan-y;user-select:none;
+    scrollbar-width:none;
+  }
+  .slider-track::-webkit-scrollbar{display:none;}
+  .slider-track.is-dragging{cursor:grabbing;scroll-behavior:auto;}
+
+  /* snap-align is start, not center: on wide screens the card (780px) is
+     narrower than the track (1124px at 1440), so a centred first/last card
+     would need a scroll offset outside the scrollable range. Mandatory
+     snapping then bounces away from it and card 1 can never be shown. With
+     start, every card has a reachable snap position, and on phones the card
+     is ~full width so it still reads as centred. */
+  .p-card{flex:none;width:min(88vw,780px);scroll-snap-align:start;}
+  .p-media{
+    position:relative;border-radius:var(--r-card);overflow:hidden;
+    background:var(--media-bg);box-shadow:var(--sh-media);
+  }
+  .p-media img,.p-media video{
+    display:block;width:100%;aspect-ratio:3/2;object-fit:cover;
+  }
+  .p-body{
+    display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+    gap:18px;padding:22px 4px 0;
+  }
+  .p-info{min-width:0;}
+  .p-tag{font-size:11.5px;letter-spacing:2.2px;color:var(--brand);margin-bottom:6px;}
+  .p-name{
+    font-family:var(--font-display);font-size:var(--fs-card-title);font-weight:700;
+    line-height:1.35;color:var(--brand-deep);margin:0;
+  }
+  .p-desc{
+    font-size:var(--fs-small);line-height:1.65;color:var(--text-2);
+    margin:8px 0 0;max-width:520px;text-wrap:pretty;
+  }
+  .p-buy{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+  .p-price-row{display:flex;align-items:baseline;gap:6px;}
+  .p-price{
+    font-family:var(--font-display);font-size:var(--fs-price);font-weight:700;
+    line-height:1.2;color:var(--brand-deep);
+  }
+  .p-unit{font-size:13.5px;color:var(--text-3);}
+  .p-order{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:var(--fs-small);font-weight:600;color:var(--brand);transition:color .2s ease;
+  }
+  .p-order:hover{color:var(--brand-deep);}
+
+  .slider-arrow{
+    position:absolute;top:32%;transform:translateY(-50%);
+    width:52px;height:52px;border-radius:50%;
+    border:1px solid var(--border);background:rgba(255,255,255,.94);
+    color:var(--brand-deep);font-size:21px;line-height:1;
+    cursor:pointer;box-shadow:var(--sh-arrow);
+    transition:background .2s ease,color .2s ease;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .slider-arrow:hover{background:var(--brand);color:#fff;}
+  .slider-arrow[disabled]{opacity:.35;cursor:default;}
+  .slider-arrow[disabled]:hover{background:rgba(255,255,255,.94);color:var(--brand-deep);}
+  .slider-prev{left:-10px;}
+  .slider-next{right:-10px;}
+
+  .slider-dots{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:10px;}
+  .slider-dots button{
+    height:9px;width:9px;padding:0;border:none;border-radius:var(--r-pill);
+    background:var(--dot-idle);cursor:pointer;transition:width .3s ease,background .3s ease;
+  }
+  .slider-dots button[aria-current="true"]{width:26px;background:var(--brand);}
+
+  .addon-note{
+    display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+    margin-top:26px;padding:18px 22px;
+    border:1px dashed var(--border-dashed);border-radius:var(--r-tile);
+    color:var(--text-2);font-size:var(--fs-small);
+  }
+  .addon-price{color:var(--brand);font-weight:600;}
+  .addon-sep{color:var(--border-dashed);}
+
+  /* Arrows sit slightly outside the track; below this they would overhang the
+     gutter. Drag and dots still cover navigation. */
+  @media (max-width:700px){
+    .slider-arrow{display:none;}
+  }
+
+  /* ---------- PROCESS ----------
+     Kept from the pre-2026 site, repainted: white cards on the page tint with
+     the shared border token and the brand-blue step badge. */
+  .process{padding:90px 0 40px;}
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--card-gap);}
+  .step{
+    background:var(--surface);border-radius:var(--r-form);padding:34px 26px;
+    border:1px solid var(--border);
+  }
+  .step-num{
+    width:40px;height:40px;border-radius:50%;background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display);font-weight:700;font-size:18px;margin-bottom:18px;
+  }
+  .step h3{
+    font-family:var(--font-display);font-size:20px;font-weight:700;
+    color:var(--brand-deep);margin-bottom:8px;
+  }
+  .step p{font-size:var(--fs-small);line-height:1.65;color:var(--text-2);margin:0;}
+
+  /* ---------- GALLERY ---------- */
+  .gallery{padding:50px 0 40px;}
+  .gal-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(clamp(148px,19vw,224px),1fr));
+    gap:var(--grid-gap);
+  }
+  .gal-item{
+    position:relative;aspect-ratio:1;border-radius:var(--r-tile);overflow:hidden;
+    background:var(--media-bg);box-shadow:var(--sh-tile);
+  }
+  .gal-item img{width:100%;height:100%;object-fit:cover;display:block;}
+  /* 13th tile: sends people into the design tool instead of showing work */
+  .gal-cta{
+    display:flex;flex-direction:column;justify-content:flex-end;gap:10px;
+    aspect-ratio:1;border-radius:var(--r-tile);padding:18px;
+    background:var(--brand-deep);color:#fff;
+    transition:background .2s ease;
+  }
+  .gal-cta:hover{background:var(--brand);}
+  .gal-cta-title{font-family:var(--font-display);font-weight:700;font-size:19px;line-height:1.35;}
+  .gal-cta-sub{font-size:var(--fs-label);color:var(--muted-light);}
+  .gal-cta:hover .gal-cta-sub{color:#fff;}
+
+  /* ---------- STORY ----------
+     Kept from the pre-2026 site, repainted onto the deep-blue band. The -2deg
+     tilt goes: the 2026 language is square to the grid. */
+  .story{padding:90px 0;background:var(--brand-deep);color:#fff;overflow:hidden;}
+  .story-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    gap:48px;align-items:center;
+  }
+  .story-photo{
+    border-radius:var(--r-card);overflow:hidden;
+    box-shadow:0 24px 50px -20px rgba(var(--scrim-rgb),.55);
+  }
+  .story-photo img{width:100%;height:auto;object-fit:cover;}
+  .story-text .eyebrow{color:var(--accent-light);}
+  .story-text h2{color:#fff;font-size:var(--fs-h3);margin-bottom:18px;}
+  .story-text p{color:rgba(255,255,255,.82);font-size:15.5px;line-height:1.7;max-width:520px;}
+
+  /* ---------- DESIGN-TOOL PROMO BAND ---------- */
+  .promo{padding:70px 0;}
+  .promo-card{
+    position:relative;overflow:hidden;
+    border-radius:var(--r-card);border:1px solid var(--brand-deep);
+    background:linear-gradient(120deg,var(--brand-deep),var(--brand-deep-end));
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  }
+  .promo-copy{
+    padding:clamp(30px,4vw,54px);
+    display:flex;flex-direction:column;justify-content:center;gap:18px;
+  }
+  .promo-eyebrow{color:var(--accent-light);margin-bottom:0;}
+  .promo-copy h3{
+    font-size:var(--fs-h3);font-weight:700;line-height:1.3;color:#fff;margin:0;
+  }
+  .promo-copy p{
+    font-size:15.5px;line-height:1.7;color:rgba(255,255,255,.82);margin:0;
+  }
+  .promo-cta{align-self:flex-start;margin-top:6px;}
+  .promo-photo{
+    min-height:280px;
+    background-image:url('assets/car-grey.jpg');
+    background-size:cover;background-position:center;
+  }
+
+  /* ---------- CONTACT ---------- */
+  .contact{padding:80px 0 40px;}
+  .contact-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    gap:48px;align-items:start;
+  }
+  .contact-intro h2{font-size:var(--fs-h2);margin:0 0 18px;}
+  .contact-intro > p{
+    font-size:var(--fs-body);line-height:1.7;color:var(--text-2);
+    margin:0 0 32px;max-width:420px;
+  }
+  .contact-rows{display:flex;flex-direction:column;gap:var(--grid-gap);}
+  .contact-row{
+    display:flex;align-items:center;gap:14px;
+    padding:16px 20px;border:1px solid var(--border);border-radius:var(--r-tile);
+    background:var(--surface);transition:border-color .2s ease;
+  }
+  .contact-row:hover{border-color:var(--brand);}
+  .contact-badge{
+    width:38px;height:38px;flex:none;border-radius:var(--r-badge);background:var(--tint);
+    display:flex;align-items:center;justify-content:center;
+    font-size:15px;color:var(--brand);font-weight:700;
+  }
+  .contact-text{display:flex;flex-direction:column;gap:2px;}
+  .contact-label{font-size:var(--fs-eyebrow);color:var(--text-3);}
+  .contact-value{font-size:17px;font-weight:600;color:var(--brand-deep);}
+
+  .lead-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--r-form);
+    padding:clamp(24px,3vw,36px);box-shadow:var(--sh-form);
+  }
+  .lead-title{
+    font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.4;
+    color:var(--brand-deep);margin-bottom:6px;
+  }
+  .lead-sub{font-size:13.5px;color:var(--text-3);margin-bottom:24px;}
+  .lead-form{display:flex;flex-direction:column;gap:var(--grid-gap);}
+  .field{display:flex;flex-direction:column;gap:7px;}
+  .field-label{font-size:var(--fs-label);color:var(--text-2);}
+  .field input,.field textarea{
+    background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r-input);
+    padding:13px 15px;font-size:15px;color:var(--ink);outline:none;
+    font-family:inherit;transition:border-color .2s ease,background .2s ease;
+  }
+  .field textarea{resize:vertical;}
+  .field input:focus,.field textarea:focus{border-color:var(--brand);background:var(--surface);}
+  .field input[aria-invalid="true"],.field textarea[aria-invalid="true"]{border-color:#C0392B;}
+  .form-error{margin:0;font-size:var(--fs-label);color:#C0392B;}
+  .lead-submit{width:100%;margin-top:6px;font-size:15.5px;padding:15px;box-shadow:none;}
+  .lead-submit:hover{transform:none;box-shadow:var(--sh-cta);}
+  .lead-done{
+    padding:26px 20px;border-radius:var(--r-tile);
+    background:var(--tint);border:1px solid var(--border-success);text-align:center;
+  }
+  .lead-done-title{
+    font-family:var(--font-display);font-size:20px;font-weight:600;
+    color:var(--brand-deep);margin-bottom:6px;
+  }
+  .lead-done-sub{font-size:14px;color:var(--text-2);}
+
+  /* ---------- FOOTER ---------- */
+  footer{background:var(--brand-deep);margin-top:70px;}
+  .foot-inner{
+    display:flex;flex-wrap:wrap;gap:18px;
+    align-items:center;justify-content:space-between;
+    padding-top:34px;padding-bottom:34px;
+  }
+  .foot-brand{display:flex;align-items:center;gap:11px;}
+  .foot-brand img{width:34px;height:34px;border-radius:50%;object-fit:contain;background:#fff;}
+  .foot-wordmark{
+    font-family:var(--font-display);font-weight:600;letter-spacing:2px;
+    font-size:15px;color:#fff;
+  }
+  .foot-contact{font-size:var(--fs-label);color:rgba(255,255,255,.7);}
+
+  /* ---------- RESPONSIVE ----------
+     Nearly everything is fluid (clamp + auto-fit), so only the things that
+     cannot be expressed that way live here. */
+  @media (max-width:900px){
+    /* display:none/block cannot be done with clamp; the hamburger needs it */
+    nav.links{display:none;}
+    .menu-toggle{display:block;}
+  }
+  /* The nav row runs out of width before the type scale does. */
+  @media (max-width:420px){
+    .nav-inner{gap:10px;padding-left:18px;padding-right:18px;}
+    .brand img{width:38px;height:38px;}
+    .brand-text{font-size:16px;letter-spacing:1.6px;}
+    .btn-sm{font-size:13px;padding:9px 14px;}
+    .wrap{padding-left:18px;padding-right:18px;}
+  }
