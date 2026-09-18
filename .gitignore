@@ -25,6 +25,7 @@ assets/legacy/
 !assets/booth-6.jpg
 !assets/booth-7.jpg
 !assets/w-*.webp
+!assets/story-photo.webp
 
 # Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
 uploads/
