@@ -262,24 +262,29 @@
     .hero-video{display:none;}   /* the poster stays via the section background */
     .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
   }
-  /* ---------- TRUST MARQUEE ---------- */
+  /* ---------- TRUST MARQUEE ----------
+     Kept from the pre-2026 site (the design has no equivalent), repainted onto
+     the new palette. */
   .trust{
-    background:var(--red-darker);
-    color:var(--blush);
+    background:var(--brand-deep);
+    color:var(--muted-light);
     padding:20px 0;
     overflow:hidden;
   }
   .trust .label{
-    text-align:center;font-family:var(--font-body);font-size:12.5px;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--gold-light);margin-bottom:12px;font-weight:500;
+    text-align:center;font-family:var(--font-body);font-size:var(--fs-eyebrow);
+    letter-spacing:3px;color:var(--accent-light);margin-bottom:12px;font-weight:400;
   }
   .marquee{display:flex;white-space:nowrap;overflow:hidden;}
   .marquee-track{display:flex;gap:52px;animation:scroll 26s linear infinite;padding-right:52px;align-items:center;}
   .marquee-track span{
-    font-family:var(--font-display);font-size:20px;color:#fff;opacity:.9;letter-spacing:.02em;
+    font-family:var(--font-display);font-weight:600;font-size:20px;color:#fff;opacity:.9;letter-spacing:.02em;
   }
-  .marquee-track span.dot{color:var(--gold);font-family:var(--font-body);}
+  .marquee-track span.dot{color:var(--accent-light);font-family:var(--font-body);}
   @keyframes scroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+  @media (prefers-reduced-motion:reduce){
+    .marquee-track{animation:none;}
+  }
 
   /* ---------- SECTION HEAD (shared) ---------- */
   .section-head{max-width:640px;margin-bottom:40px;}
@@ -383,19 +388,25 @@
     .slider-arrow{display:none;}
   }
 
-  /* ---------- PROCESS ---------- */
-  .process{padding:90px 0;background:var(--paper);}
-  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;position:relative;}
+  /* ---------- PROCESS ----------
+     Kept from the pre-2026 site, repainted: white cards on the page tint with
+     the shared border token and the brand-blue step badge. */
+  .process{padding:90px 0 40px;}
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--card-gap);}
   .step{
-    background:var(--cream);border-radius:18px;padding:34px 26px;position:relative;
-    border:1px solid rgba(var(--brand-rgb),.1);
+    background:var(--surface);border-radius:var(--r-form);padding:34px 26px;
+    border:1px solid var(--border);
   }
   .step-num{
-    width:40px;height:40px;border-radius:50%;background:var(--red);color:#fff;
-    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;margin-bottom:18px;
+    width:40px;height:40px;border-radius:50%;background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display);font-weight:700;font-size:18px;margin-bottom:18px;
   }
-  .step h3{font-size:17.5px;font-family:var(--font-body);font-weight:600;color:var(--red-darker);margin-bottom:8px;}
-  .step p{font-size:14px;color:var(--ink-soft);margin:0;}
+  .step h3{
+    font-family:var(--font-display);font-size:20px;font-weight:700;
+    color:var(--brand-deep);margin-bottom:8px;
+  }
+  .step p{font-size:var(--fs-small);line-height:1.65;color:var(--text-2);margin:0;}
 
   /* ---------- GALLERY ---------- */
   .gallery{padding:50px 0 40px;}
@@ -421,18 +432,22 @@
   .gal-cta-sub{font-size:var(--fs-label);color:var(--muted-light);}
   .gal-cta:hover .gal-cta-sub{color:#fff;}
 
-  /* ---------- STORY ---------- */
-  .story{padding:90px 0;background:var(--red-darker);color:var(--cream);overflow:hidden;}
-  .story-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:center;}
-  .story-photo{
-    border-radius:16px;overflow:hidden;box-shadow:0 24px 50px -20px rgba(var(--scrim-rgb),.55);
-    transform:rotate(-2deg);
+  /* ---------- STORY ----------
+     Kept from the pre-2026 site, repainted onto the deep-blue band. The -2deg
+     tilt goes: the 2026 language is square to the grid. */
+  .story{padding:90px 0;background:var(--brand-deep);color:#fff;overflow:hidden;}
+  .story-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    gap:48px;align-items:center;
   }
-  .story-photo img{width:100%;object-fit:cover;}
-  .story-text .eyebrow{color:var(--gold-light);}
-  .story-text .eyebrow::before{background:var(--gold-light);}
-  .story-text h2{color:#fff;font-size:clamp(24px,3vw,32px);margin-bottom:18px;}
-  .story-text p{color:rgba(255,255,255,.82);font-size:15.5px;max-width:520px;}
+  .story-photo{
+    border-radius:var(--r-card);overflow:hidden;
+    box-shadow:0 24px 50px -20px rgba(var(--scrim-rgb),.55);
+  }
+  .story-photo img{width:100%;height:auto;object-fit:cover;}
+  .story-text .eyebrow{color:var(--accent-light);}
+  .story-text h2{color:#fff;font-size:var(--fs-h3);margin-bottom:18px;}
+  .story-text p{color:rgba(255,255,255,.82);font-size:15.5px;line-height:1.7;max-width:520px;}
 
   /* ---------- DESIGN-TOOL PROMO BAND ---------- */
   .promo{padding:70px 0;}
@@ -480,8 +495,5 @@
   @media (max-width:900px){
     nav.links{display:none;}
     .menu-toggle{display:block;}
-    .steps{grid-template-columns:1fr;}
-    .story-grid{grid-template-columns:1fr;}
-    .story-photo{max-width:320px;margin:0 auto;}
     .foot-grid{grid-template-columns:1fr;gap:28px;}
   }
