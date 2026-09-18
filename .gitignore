@@ -3,3 +3,8 @@ assets/
 # Design tool assets are required for the site to render (car photos, masks, logo)
 !design-tool/assets/
 !design-tool/assets/**
+
+# Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
+uploads/
+design_handoff_baanbow_site/
+design-tool/uploads/

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Trirong:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0}
+a{color:#b1852f;text-decoration:none}
+a:hover{color:#8a6420}
+button{font-family:inherit}
+input{font-family:inherit}
+::selection{background:#e7d5ad}
+input[type=color]{-webkit-appearance:none;appearance:none;border:none;padding:0;background:none}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
+</style>
+</helmet>
+<div ref="{{setRoot}}" style="{{rootStyle}}">
+  <div style="{{headerStyle}}">
+    <img src="assets/baanbow-logo.png" alt="BAAN BOW" style="height:78px;width:78px;object-fit:contain;flex:0 0 auto;transform:translateX(-133%);margin-right:-95px" />
+    <div style="font-family:'Trirong',serif;font-weight:700;font-size:25px;letter-spacing:.3px;color:#2a241d">DESIGN <span style="color:#c62828">โบว์</span>ในแบบของคุณ</div>
+  </div>
+  <div style="{{rowStyle}}">
+
+  <div style="{{previewPaneStyle}}">
+    <div ref="{{setStage}}" style="{{stageStyle}}">
+      <canvas ref="{{setCanvas}}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+      <sc-for list="{{tails}}" as="tl" hint-placeholder-count="2">
+        <div style="{{tl.style}}">{{tl.text}}</div>
+      </sc-for>
+      <div style="position:absolute;left:14px;bottom:14px;right:14px;display:flex;gap:7px;flex-wrap:wrap;pointer-events:none">
+        <span style="background:rgba(20,16,10,.72);color:#fff;font-size:12px;padding:5px 11px;border-radius:999px">{{capColor}}</span>
+        <span style="background:rgba(20,16,10,.72);color:#fff;font-size:12px;padding:5px 11px;border-radius:999px">{{capEdge}}</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="{{panelStyle}}">
+
+    <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#2a241d;margin:0 0 12px">สีผ้าโบว์</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">
+      <sc-for list="{{swatches}}" as="sw" hint-placeholder-count="8">
+        <button onClick="{{sw.onClick}}" title="{{sw.name}}" style="{{sw.style}}">
+          <span style="{{sw.dotStyle}}"></span>
+          <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">{{sw.name}}</span>
+        </button>
+      </sc-for>
+      <label style="{{customLabelStyle}}">
+        <span style="{{customDotStyle}}"></span>
+        <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">กำหนดเอง</span>
+        <input type="color" value="{{customColor}}" onInput="{{onCustom}}" style="position:absolute;inset:0;opacity:0;cursor:pointer" />
+      </label>
+    </div>
+
+    <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#2a241d;margin:26px 0 12px">ข้อความบนหางโบว์</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input type="text" value="{{line1}}" onInput="{{onLine1}}" placeholder="หางซ้าย เช่น ยินดีด้วย" style="{{inputStyle}}" style-focus="{{inputFocus}}" />
+      <input type="text" value="{{line2}}" onInput="{{onLine2}}" placeholder="หางขวา เช่น รับรถใหม่" style="{{inputStyle}}" style-focus="{{inputFocus}}" />
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:11px">
+      <sc-for list="{{presets}}" as="p" hint-placeholder-count="4">
+        <button onClick="{{p.onClick}}" style="{{chipStyle}}">{{p.label}}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+      <span style="font-size:12.5px;color:#8a7d6a">สีตัวอักษร</span>
+      <div style="display:flex;gap:7px;align-items:center">
+        <sc-for list="{{textColors}}" as="tc" hint-placeholder-count="6">
+          <button onClick="{{tc.onClick}}" aria-label="สีตัวอักษร" style="{{tc.style}}"></button>
+        </sc-for>
+        <label style="width:26px;height:26px;border-radius:50%;position:relative;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2);background:conic-gradient(from 0deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);overflow:hidden">
+          <input type="color" value="{{textColor}}" onInput="{{onTextColor}}" style="position:absolute;inset:-4px;opacity:0;cursor:pointer" />
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-top:28px;padding:18px;border-radius:16px;background:#2a241d;color:#f4efe7">
+      <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#e7c987;margin-bottom:12px">สรุปแบบโบว์</div>
+      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">สีโบว์</span><span style="text-align:right">{{sumColor}}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ขอบทอง</span><span style="text-align:right">{{sumEdge}}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ข้อความ</span><span style="text-align:right">{{sumText}}</span></div>
+    </div>
+
+    <div style="display:flex;gap:11px;margin-top:16px">
+      <button onClick="{{saveImage}}" style="{{saveBtnStyle}}">บันทึกภาพ</button>
+      <button onClick="{{sendToShop}}" style="{{sendBtnStyle}}">ส่งแบบให้ร้าน</button>
+    </div>
+    <div style="min-height:20px;margin-top:10px;font-size:13px;color:#7a9a4e;text-align:center;font-weight:500">{{phaseText}}</div>
+    <div style="font-size:11.5px;color:#a89c88;text-align:center;margin-top:2px;line-height:1.5">“ส่งแบบให้ร้าน” จะคัดลอกรายละเอียด + เปิด LINE ให้ · แนบภาพที่บันทึกไว้ไปด้วย</div>
+
+  </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#b1852f&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#b1852f&quot;,&quot;#8f1d1d&quot;,&quot;#1f3a63&quot;,&quot;#2c2c2c&quot;]},&quot;goldEdgeDefault&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showPrice&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  scenes = {
+    edge:  { img:'assets/car-grey.jpg',   mask:'assets/car-grey-mask.png',  w:1275, h:1233,
+             tails:[{x:0.325,y:0.53,rot:-58,mw:0.32},{x:0.67,y:0.535,rot:58,mw:0.32}],
+             logo:{img:'assets/baanbow-logo.png', x:0.508, y:0.732, h:0.372} },
+    plain: { img:'assets/byd-no-edge.jpg', mask:'assets/byd-mask.png',        w:896,  h:1195,
+             tails:[{x:0.285,y:0.66,rot:13,mw:0.17},{x:0.63,y:0.66,rot:-13,mw:0.17}] },
+  };
+  fabrics = [
+    {id:'natural',   name:'ครีมธรรมชาติ', hex:null},
+    {id:'pearl',     name:'ขาวมุก',       hex:'#e9edf2'},
+    {id:'red',       name:'แดงมงคล',      hex:'#c62828'},
+    {id:'burgundy',  name:'เบอร์กันดี',    hex:'#7c1f2b'},
+    {id:'rose',      name:'ชมพูโรส',      hex:'#e59aa6'},
+    {id:'champagne', name:'แชมเปญทอง',    hex:'#c9a24b'},
+    {id:'navy',      name:'น้ำเงินกรมท่า', hex:'#22365f'},
+    {id:'sky',       name:'ฟ้าเซเรนิตี้',  hex:'#86abd2'},
+    {id:'emerald',   name:'เขียวมรกต',    hex:'#1f7a5a'},
+    {id:'lavender',  name:'ม่วงลาเวนเดอร์', hex:'#8f7bb0'},
+    {id:'charcoal',  name:'ดำหรู',        hex:'#2c2c2c'},
+  ];
+  sizes = [
+    {id:'S',  label:'S',  dim:'กว้าง ~60 ซม.',  price:890},
+    {id:'M',  label:'M',  dim:'กว้าง ~80 ซม.',  price:1290},
+    {id:'L',  label:'L',  dim:'กว้าง ~100 ซม.', price:1690},
+    {id:'XL', label:'XL', dim:'กว้าง ~120 ซม.', price:2290},
+  ];
+  presetList = [
+    {label:'ยินดีด้วย · รับรถใหม่', l1:'ยินดีด้วย', l2:'รับรถใหม่'},
+    {label:'ยินดีต้อนรับสมาชิกใหม่', l1:'ยินดีต้อนรับ', l2:'สมาชิกใหม่'},
+    {label:'สุขสันต์วันเกิด', l1:'สุขสันต์', l2:'วันเกิด'},
+    {label:'ขอบคุณที่ไว้วางใจ', l1:'ขอบคุณ', l2:'ที่ไว้วางใจ'},
+  ];
+  textSwatches = ['#ffffff','#4a3620','#241c12','#b1852f','#8f1d1d','#1f3a63'];
+
+  state = { colorId:'red', customColor:'#c62828', goldEdge:true, line1:'ยินดีด้วย', line2:'รับรถใหม่',
+            textColor:'#4a3620', size:'L', isNarrow:false, stageW:760, phase:'idle' };
+
+  componentDidMount(){
+    if (this.props.goldEdgeDefault === false) this.setState({goldEdge:false});
+    this._ro = new ResizeObserver(()=>this.measure());
+    if (this.rootEl) this._ro.observe(this.rootEl);
+    window.addEventListener('resize', this.measure);
+    this.measure();
+    this.drawPreview();
+  }
+  componentDidUpdate(){ this.drawPreview(); }
+  componentWillUnmount(){
+    window.removeEventListener('resize', this.measure);
+    if (this._ro) this._ro.disconnect();
+  }
+
+  setRoot = (el)=>{ this.rootEl = el; if (el && this._ro) this._ro.observe(el); if (el) this.measure(); };
+  setStage = (el)=>{ this.stageEl = el; if (el) this.measure(); };
+  measure = ()=>{
+    const patch = {};
+    if (this.stageEl){ const w = this.stageEl.clientWidth; if (w && Math.abs(w-this.state.stageW)>1) patch.stageW = w; }
+    if (this.rootEl){ const n = this.rootEl.clientWidth < 880; if (n !== this.state.isNarrow) patch.isNarrow = n; }
+    if (Object.keys(patch).length) this.setState(patch);
+  };
+
+  setColor = (id)=> this.setState({colorId:id});
+  onCustom = (e)=> this.setState({colorId:'custom', customColor:e.target.value});
+  toggleEdge = ()=> this.setState(s=>({goldEdge:!s.goldEdge}));
+  onLine1 = (e)=> this.setState({line1:e.target.value});
+  onLine2 = (e)=> this.setState({line2:e.target.value});
+  applyPreset = (p)=> this.setState({line1:p.l1, line2:p.l2});
+  setSize = (id)=> this.setState({size:id});
+  setTextColor = (c)=> this.setState({textColor:c});
+  onTextColor = (e)=> this.setState({textColor:e.target.value});
+
+  scene(){ return this.state.goldEdge ? this.scenes.edge : this.scenes.plain; }
+  tintColor(){ const s=this.state; if (s.colorId==='custom') return s.customColor; if (s.colorId==='natural') return null; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.hex:null; }
+  fabricName(){ const s=this.state; if (s.colorId==='custom') return 'กำหนดเอง'; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.name:'—'; }
+  computeFont(txt, refW, mw){ const maxF=refW*0.052; const avail=refW*mw; const est=(txt?txt.length:0)*0.58; let fs= est>0 ? Math.min(maxF, avail/est) : maxF; return Math.max(refW*0.022, fs); }
+  fmt(n){ return '฿'+Number(n).toLocaleString('en-US'); }
+  hasText(){ return (this.state.line1||'').trim()!=='' || (this.state.line2||'').trim()!==''; }
+  costs(){ const base=(this.sizes.find(x=>x.id===this.state.size)||{}).price||0; const edge=this.state.goldEdge?300:0; const text=this.hasText()?200:0; return {base, edge, text, total:base+edge+text}; }
+  orderSummary(){
+    const c=this.costs(); const s=this.state; const sz=this.sizes.find(x=>x.id===s.size)||{};
+    const msg=[s.line1,s.line2].filter(x=>(x||'').trim()).join(' ') || '-';
+    let out='【BAAN BOW — สั่งทำโบว์รถ】\n';
+    out+='• สีโบว์: '+this.fabricName()+(this.tintColor()?(' ('+this.tintColor()+')'):'')+'\n';
+    out+='• ขอบทอง: '+(s.goldEdge?'มี':'ไม่มี')+'\n';
+    out+='• ขนาด: '+sz.label+' ('+sz.dim+')\n';
+    out+='• ข้อความ: '+msg+'\n';
+    out+='• สีตัวอักษร: '+s.textColor+'\n';
+    if (this.props.showPrice !== false) out+='• ราคาโดยประมาณ: '+this.fmt(c.total)+'\n';
+    out+='(แนบไฟล์ภาพตัวอย่างที่บันทึกไว้)';
+    return out;
+  }
+
+  loadImg(src){ if(!this._imgCache) this._imgCache={}; if(!this._imgCache[src]) this._imgCache[src]=new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=src; }); return this._imgCache[src]; }
+  setCanvas = (el)=>{ this.canvasEl = el; if (el) this.drawPreview(); };
+  drawPreview(){ const sc=this.scene(); const cv=this.canvasEl; if(!cv) return; const tint=this.tintColor(); const token=sc.img+'|'+tint; this._pendTok=token; const imgs=[this.loadImg(sc.img), this.loadImg(sc.mask)]; if(sc.logo) imgs.push(this.loadImg(sc.logo.img)); Promise.all(imgs).then(([base,mask,logoImg])=>{ if(!this.canvasEl || this._pendTok!==token) return; const c=this.canvasEl; if(c.width!==sc.w) c.width=sc.w; if(c.height!==sc.h) c.height=sc.h; const ctx=c.getContext('2d'); ctx.clearRect(0,0,sc.w,sc.h); ctx.drawImage(base,0,0,sc.w,sc.h); if(tint){ const t=document.createElement('canvas'); t.width=sc.w; t.height=sc.h; const tc=t.getContext('2d'); tc.fillStyle=tint; tc.fillRect(0,0,sc.w,sc.h); tc.globalCompositeOperation='destination-in'; tc.drawImage(mask,0,0,sc.w,sc.h); ctx.globalCompositeOperation='multiply'; ctx.drawImage(t,0,0); ctx.globalCompositeOperation='source-over'; } if(sc.logo && logoImg){ const lh=sc.logo.h*sc.h, lw=lh*(logoImg.width/logoImg.height); ctx.drawImage(logoImg, sc.logo.x*sc.w-lw/2, sc.logo.y*sc.h-lh/2, lw, lh); } }).catch(e=>console.error('drawPreview',e)); }
+  saveImage = async ()=>{
+    try{
+      this.setState({phase:'saving'});
+      const sc=this.scene();
+      const imgs=[this.loadImg(sc.img), this.loadImg(sc.mask)]; if(sc.logo) imgs.push(this.loadImg(sc.logo.img)); const [base,mask,logoImg]=await Promise.all(imgs);
+      if (document.fonts && document.fonts.ready) { try{ await document.fonts.ready; }catch(e){} }
+      const w=sc.w, h=sc.h;
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      const ctx=cv.getContext('2d');
+      ctx.drawImage(base,0,0,w,h);
+      const tint=this.tintColor();
+      if (tint){
+        const t=document.createElement('canvas'); t.width=w; t.height=h;
+        const tc=t.getContext('2d');
+        tc.fillStyle=tint; tc.fillRect(0,0,w,h);
+        tc.globalCompositeOperation='destination-in'; tc.drawImage(mask,0,0,w,h);
+        ctx.globalCompositeOperation='multiply'; ctx.drawImage(t,0,0); ctx.globalCompositeOperation='source-over';
+      }
+      const lines=[this.state.line1,this.state.line2];
+      sc.tails.forEach((tl,i)=>{
+        const txt=(lines[i]||'').trim(); if(!txt) return;
+        const fs=this.computeFont(txt, w, tl.mw);
+        ctx.save();
+        ctx.translate(tl.x*w, tl.y*h); ctx.rotate(tl.rot*Math.PI/180);
+        ctx.font='600 '+fs+'px Trirong, serif'; ctx.fillStyle=this.state.textColor;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.shadowColor='rgba(0,0,0,.30)'; ctx.shadowBlur=fs*0.12; ctx.shadowOffsetY=fs*0.04;
+        ctx.fillText(txt,0,0);
+        ctx.restore();
+      });
+      if(sc.logo && logoImg){ const lh=sc.logo.h*h, lw=lh*(logoImg.width/logoImg.height); ctx.drawImage(logoImg, sc.logo.x*w-lw/2, sc.logo.y*h-lh/2, lw, lh); }
+      const url=cv.toDataURL('image/png');
+      const a=document.createElement('a'); a.href=url; a.download='baanbow-'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove();
+      this.setState({phase:'saved'}); clearTimeout(this._pt); this._pt=setTimeout(()=>this.setState({phase:'idle'}),2600);
+    }catch(e){ console.error('saveImage failed', e); this.setState({phase:'error'}); clearTimeout(this._pt); this._pt=setTimeout(()=>this.setState({phase:'idle'}),3000); }
+  };
+  sendToShop = ()=>{
+    const sum=this.orderSummary();
+    try{ if (navigator.clipboard) navigator.clipboard.writeText(sum); }catch(e){}
+    try{ window.open('https://line.me/R/msg/text/?'+encodeURIComponent(sum), '_blank'); }catch(e){}
+    this.setState({phase:'sent'}); clearTimeout(this._pt); this._pt=setTimeout(()=>this.setState({phase:'idle'}),3200);
+  };
+
+  renderVals(){
+    const s=this.state;
+    const accent=this.props.accent || '#b1852f';
+    const showPrice=this.props.showPrice !== false;
+    const scene=this.scene();
+    const tint=this.tintColor();
+    const c=this.costs();
+
+    const isN=s.isNarrow;
+    const rootStyle={ minHeight:'100vh', display:'flex', flexDirection:'column',
+      background:'#f4efe7', fontFamily:"'IBM Plex Sans Thai',system-ui,sans-serif", color:'#2a241d' };
+    const headerStyle={ display:'flex', alignItems:'center', justifyContent:'center', gap:'14px', padding: isN?'16px 16px':'16px 28px',
+      background:'#ffffff', boxShadow:'0 1px 0 rgba(0,0,0,.08)' };
+    const rowStyle={ display:'flex', flexDirection: isN?'column':'row', flex:'1 1 auto', minHeight:0 };
+    const previewPaneStyle = isN
+      ? { padding:'16px 16px 4px', display:'flex', justifyContent:'center' }
+      : { flex:'1 1 auto', minWidth:0, position:'sticky', top:'0', alignSelf:'flex-start', height:'calc(100vh - 86px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'32px' };
+    const panelStyle = isN
+      ? { width:'auto', padding:'8px 16px 44px', maxWidth:'560px', margin:'0 auto' }
+      : { width:'444px', flex:'0 0 444px', minHeight:'calc(100vh - 86px)', background:'#ffffff', boxShadow:'-1px 0 0 rgba(0,0,0,.06)', padding:'30px 28px 52px' };
+    const stageStyle={ position:'relative', width:'100%', maxWidth: isN? '520px' : '860px',
+      aspectRatio: scene.w+' / '+scene.h, maxHeight: isN? 'none':'86vh', margin:'0 auto',
+      borderRadius:'18px', overflow:'hidden', background:'#e6e0d5',
+      boxShadow:'0 26px 60px -22px rgba(60,40,10,.5)' };
+
+    const tintStyle = tint ? { position:'absolute', inset:0, background:tint, mixBlendMode:'multiply',
+      WebkitMaskImage:'url("'+scene.mask+'")', maskImage:'url("'+scene.mask+'")',
+      WebkitMaskSize:'100% 100%', maskSize:'100% 100%', WebkitMaskRepeat:'no-repeat', maskRepeat:'no-repeat',
+      pointerEvents:'none' } : {};
+
+    const lines=[s.line1,s.line2];
+    const tails=scene.tails.map((t,i)=>({txt:(lines[i]||'').trim(), t}))
+      .filter(o=>o.txt)
+      .map(o=>{ const fs=this.computeFont(o.txt, s.stageW, o.t.mw);
+        return { text:o.txt, style:{ position:'absolute', left:(o.t.x*100)+'%', top:(o.t.y*100)+'%',
+          transform:'translate(-50%,-50%) rotate('+o.t.rot+'deg)', transformOrigin:'center',
+          fontFamily:"'Trirong', serif", fontWeight:600, fontSize:fs+'px', lineHeight:1, color:s.textColor,
+          whiteSpace:'nowrap', letterSpacing:'.5px', textShadow:'0 1px 3px rgba(0,0,0,.30)', pointerEvents:'none' } }; });
+
+    const swBase={ display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', padding:'9px 4px',
+      borderRadius:'12px', border:'none', cursor:'pointer', fontFamily:'inherit', transition:'box-shadow .15s, background .15s' };
+    const dotBase={ width:'26px', height:'26px', borderRadius:'50%', boxShadow:'inset 0 0 0 1px rgba(0,0,0,.14)' };
+    const swatches=this.fabrics.map(f=>({ name:f.name, onClick:()=>this.setColor(f.id),
+      style:{ ...swBase, background: s.colorId===f.id?'#fbf6ec':'#f6f2ea',
+        boxShadow: s.colorId===f.id? ('0 0 0 2px '+accent) : 'inset 0 0 0 1px rgba(0,0,0,.08)' },
+      dotStyle:{ ...dotBase, background: f.hex || 'radial-gradient(circle at 35% 30%, #ffffff, #e6dabf)' } }));
+
+    const customActive=s.colorId==='custom';
+    const customLabelStyle={ ...swBase, position:'relative', background: customActive?'#fbf6ec':'#f6f2ea',
+      boxShadow: customActive? ('0 0 0 2px '+accent):'inset 0 0 0 1px rgba(0,0,0,.08)' };
+    const customDotStyle={ ...dotBase, background: customActive? s.customColor : 'conic-gradient(from 0deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)' };
+
+    const inputStyle={ width:'100%', boxSizing:'border-box', padding:'11px 13px', borderRadius:'11px', border:'none',
+      boxShadow:'inset 0 0 0 1px rgba(0,0,0,.14)', fontSize:'14px', color:'#2a241d', background:'#fff', outline:'none' };
+    const inputFocus={ boxShadow:'inset 0 0 0 2px '+accent };
+    const chipStyle={ padding:'7px 12px', borderRadius:'999px', border:'none', cursor:'pointer', background:'#f0e9dc',
+      color:'#5b4f3c', fontSize:'12.5px', fontFamily:'inherit', fontWeight:500, transition:'background .15s' };
+    const presets=this.presetList.map(p=>({ label:p.label, onClick:()=>this.applyPreset(p) }));
+    const textColors=this.textSwatches.map(col=>({ onClick:()=>this.setTextColor(col),
+      style:{ width:'26px', height:'26px', borderRadius:'50%', border:'none', cursor:'pointer', background:col,
+        boxShadow: s.textColor===col? ('0 0 0 2px '+accent+', inset 0 0 0 1px rgba(0,0,0,.18)') : 'inset 0 0 0 1px rgba(0,0,0,.2)' } }));
+
+    const szBase={ display:'flex', flexDirection:'column', alignItems:'center', gap:'3px', padding:'12px 5px',
+      borderRadius:'12px', border:'none', cursor:'pointer', fontFamily:'inherit', transition:'box-shadow .15s, background .15s' };
+    const sizesV=this.sizes.map(z=>({ label:z.label, dim:z.dim, priceText: showPrice?this.fmt(z.price):'',
+      onClick:()=>this.setSize(z.id),
+      style:{ ...szBase, background: s.size===z.id?'#fbf6ec':'#f6f2ea',
+        boxShadow: s.size===z.id? ('0 0 0 2px '+accent):'inset 0 0 0 1px rgba(0,0,0,.08)' } }));
+
+    const trackStyle={ width:'52px', height:'30px', borderRadius:'999px', border:'none', cursor:'pointer', position:'relative',
+      flex:'0 0 auto', background: s.goldEdge?accent:'#cfc6b6', transition:'background .2s' };
+    const knobStyle={ position:'absolute', top:'3px', left: s.goldEdge?'25px':'3px', width:'24px', height:'24px',
+      borderRadius:'50%', background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,.3)', transition:'left .2s' };
+
+    const saveBtnStyle={ flex:'1 1 auto', padding:'14px', borderRadius:'12px', border:'none', cursor:'pointer',
+      background:accent, color:'#fff', fontWeight:600, fontSize:'15px', fontFamily:"'Trirong',serif", boxShadow:'0 8px 20px -9px '+accent };
+    const sendBtnStyle={ flex:'1 1 auto', padding:'14px', borderRadius:'12px', border:'none', cursor:'pointer',
+      background:'#2a241d', color:'#f4efe7', fontWeight:600, fontSize:'15px', fontFamily:"'Trirong',serif" };
+
+    const msg=[s.line1,s.line2].filter(x=>(x||'').trim()).join(' ');
+    const szObj=this.sizes.find(x=>x.id===s.size)||{};
+    const phaseMap={ saving:'กำลังสร้างภาพ…', saved:'บันทึกภาพแล้ว ✓', sent:'คัดลอกแล้ว · เปิด LINE ให้ ✓', error:'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง', idle:'' };
+
+    return {
+      setRoot:this.setRoot, setStage:this.setStage, setCanvas:this.setCanvas,
+      rootStyle, headerStyle, rowStyle, previewPaneStyle, panelStyle, stageStyle,
+      scene, hasTint:!!tint, tintStyle, tails,
+      capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: s.goldEdge?'ขอบทอง: เปิด':'ขอบทอง: ปิด',
+      edgeSubtitle: s.goldEdge?'เปิด — มีแถบขอบเข้ม':'ปิด — โบว์ผ้าเรียบ',
+      toggleEdge:this.toggleEdge, trackStyle, knobStyle,
+      swatches, customColor:s.customColor, onCustom:this.onCustom, customLabelStyle, customDotStyle,
+      line1:s.line1, line2:s.line2, onLine1:this.onLine1, onLine2:this.onLine2, inputStyle, inputFocus,
+      presets, chipStyle, textColors, textColor:s.textColor, onTextColor:this.onTextColor,
+      sizes:sizesV,
+      showPrice,
+      sumColor:this.fabricName(), sumEdge: s.goldEdge?'มี':'ไม่มี',
+      sumSize: szObj.label+' · '+szObj.dim, sumText: msg||'—', totalText:this.fmt(c.total),
+      saveImage:this.saveImage, sendToShop:this.sendToShop, saveBtnStyle, sendBtnStyle,
+      phaseText: phaseMap[s.phase]||'',
+    };
+  }
+}
+</script>
+</body>
+</html>
