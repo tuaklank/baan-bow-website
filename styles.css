@@ -93,6 +93,10 @@
 
   /* Bow design tool: its own warm-paper palette and serif, by design.
      Shared chrome (header, footer, primary buttons) keeps the :root tokens. */
+  /* Solid header variant: the tool page has no hero behind the bar, so it is
+     a filled brand band instead of a scrim over video. */
+  .header-solid{position:static;background:var(--brand-deep);backdrop-filter:none;}
+
   .theme-craft{
     --craft-ink:#2a241d;
     --craft-accent:#c62828;
@@ -103,6 +107,9 @@
     --craft-chip:#f0e9dc;
     --craft-chip-ink:#5b4f3c;
     --craft-selection:#e7d5ad;
+    --craft-size-on:#fbf6ec;
+    --craft-size-off:#f6f2ea;
+    --craft-track-off:#cfc6b6;
   }
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
