@@ -320,7 +320,59 @@
   </div>
 </section>
 
-<footer id="contact">
+<section class="contact" id="contact">
+  <div class="wrap contact-grid">
+    <div class="contact-intro reveal">
+      <div class="eyebrow">CONTACT</div>
+      <h2>สั่งทำโบว์<br>หรือสอบถามราคา</h2>
+      <p>รับผลิตโบว์สำหรับโชว์รูมและลูกค้าทั่วไป งานด่วนแจ้งล่วงหน้าได้ ทีมงานตอบกลับภายในวันทำการ</p>
+      <div class="contact-rows">
+        <a class="contact-row" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">
+          <span class="contact-badge">LINE</span>
+          <span class="contact-text">
+            <span class="contact-label">LINE Official</span>
+            <span class="contact-value">@baanbow</span>
+          </span>
+        </a>
+        <a class="contact-row" href="tel:0863624117">
+          <span class="contact-badge" aria-hidden="true">&#9743;</span>
+          <span class="contact-text">
+            <span class="contact-label">โทรสั่งทำ</span>
+            <span class="contact-value">086-362-4117</span>
+          </span>
+        </a>
+      </div>
+    </div>
+
+    <div class="lead-card reveal">
+      <div class="lead-title">ฝากข้อมูลไว้ เดี๋ยวติดต่อกลับ</div>
+      <div class="lead-sub">Leave your details and we will call you back.</div>
+      <form class="lead-form" id="leadForm" novalidate>
+        <label class="field">
+          <span class="field-label">ชื่อผู้ติดต่อ</span>
+          <input type="text" name="name" required placeholder="ชื่อ-นามสกุล หรือชื่อโชว์รูม">
+        </label>
+        <label class="field">
+          <span class="field-label">เบอร์โทร / LINE</span>
+          <input type="text" name="phone" required placeholder="08x-xxx-xxxx">
+        </label>
+        <label class="field">
+          <span class="field-label">รายละเอียด / แบบที่สนใจ</span>
+          <textarea name="note" rows="3" placeholder="เช่น แบบที่ 1 สีแดง สกรีนชื่อโชว์รูม จำนวน 5 ชิ้น"></textarea>
+        </label>
+        <p class="form-error" id="leadError" role="alert" hidden>กรุณากรอกชื่อและเบอร์โทร / LINE</p>
+        <button class="btn btn-primary lead-submit" type="submit">ส่งข้อมูล</button>
+      </form>
+      <div class="lead-done" id="leadDone" role="status" hidden>
+        <div class="lead-done-title">ได้รับข้อมูลแล้ว ขอบคุณครับ</div>
+        <div class="lead-done-sub">ทีมงานจะติดต่อกลับโดยเร็วที่สุด</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<footer>
   <div class="wrap">
     <div class="foot-grid">
       <div>
@@ -455,6 +507,30 @@
 
     window.addEventListener('resize', ()=>{ track.scrollLeft = idx*step(); }, {passive:true});
     paint();
+  })();
+
+  // lead form -- UI only for now; nothing is sent anywhere yet.
+  // TODO: wire this to a real endpoint (email, LINE Notify, CRM or a sheet).
+  (function(){
+    const form = document.getElementById('leadForm');
+    const done = document.getElementById('leadDone');
+    const err  = document.getElementById('leadError');
+    if(!form) return;
+    const required = [...form.querySelectorAll('[required]')];
+    required.forEach(f=>f.addEventListener('input', ()=>{
+      f.removeAttribute('aria-invalid');
+      if(required.every(x=>x.value.trim())) err.hidden = true;
+    }));
+    form.addEventListener('submit', ev=>{
+      ev.preventDefault();
+      const empty = required.filter(f=>!f.value.trim());
+      empty.forEach(f=>f.setAttribute('aria-invalid','true'));
+      if(empty.length){ err.hidden = false; empty[0].focus(); return; }
+      err.hidden = true;
+      form.hidden = true;
+      done.hidden = false;
+      done.focus && done.focus();
+    });
   })();
 </script>
 
