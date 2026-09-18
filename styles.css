@@ -203,58 +203,70 @@
 
   .menu-toggle{display:none;background:none;border:none;font-size:26px;color:#fff;cursor:pointer;line-height:1;padding:0 2px;}
 
-  /* ---------- HERO ---------- */
+  /* ---------- HERO ----------
+     Full-bleed looping video with the content bottom-aligned over it. The
+     1400px breakpoint that used to protect the design-tool iframe is gone:
+     the tool now lives on its own page. */
   .hero{
-    padding:76px 0 40px;
     position:relative;
+    min-height:100vh;
+    min-height:100svh;      /* avoids the mobile URL-bar jump */
+    display:flex;align-items:flex-end;
+    overflow:hidden;
+    background:var(--brand-deep);   /* shows while the video decodes */
   }
-  .hero::before{
-    content:"";position:absolute;top:-60px;right:-140px;width:420px;height:420px;
-    background:radial-gradient(circle,var(--blush) 0%, rgba(var(--brand-rgb),0) 70%);
+  .hero-video{
+    position:absolute;inset:0;
+    width:100%;height:100%;
+    object-fit:cover;
     z-index:0;
   }
-  .hero-grid{
-    display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:44px;align-items:center;
-    position:relative;z-index:1;max-width:1440px;
+  .hero-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;}
+  .hero-scrim-v{
+    background:linear-gradient(180deg,
+      rgba(var(--scrim-rgb),.6) 0%,
+      rgba(var(--brand-deep-rgb),.26) 30%,
+      rgba(var(--scrim-rgb),.82) 72%,
+      var(--brand-deep) 100%);
+  }
+  .hero-scrim-h{
+    background:linear-gradient(90deg,
+      rgba(var(--brand-deep-rgb),.9) 0%,
+      rgba(var(--brand-deep-rgb),.62) 38%,
+      rgba(var(--brand-deep-rgb),.12) 66%,
+      rgba(var(--brand-deep-rgb),0) 82%);
+  }
+  .hero-content{position:relative;z-index:2;width:100%;padding-top:108px;padding-bottom:96px;}
+
+  .eyebrow-pill{
+    display:inline-flex;align-items:center;gap:9px;
+    border:1px solid rgba(255,255,255,.42);border-radius:var(--r-pill);
+    color:#fff;font-size:var(--fs-eyebrow);letter-spacing:2.4px;
+    padding:7px 15px;margin-bottom:24px;
   }
   .hero h1{
-    font-size:clamp(34px,4.6vw,54px);
-    margin-bottom:20px;
+    font-size:var(--fs-h1);font-weight:800;line-height:1.28;letter-spacing:-.5px;
+    color:#fff;margin:0 0 20px;text-wrap:balance;
   }
-  .hero h1 span{color:var(--red);}
+  .hero h1 span{color:var(--accent-light);}
   .hero p.lead{
-    font-size:17px;color:var(--ink-soft);max-width:480px;margin-bottom:30px;
+    font-size:var(--fs-lead);line-height:1.65;color:rgba(255,255,255,.84);
+    max-width:560px;margin:0 0 34px;text-wrap:pretty;
   }
-  .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:38px;}
-  .facts{display:grid;grid-template-columns:1fr 1fr;gap:14px 26px;max-width:480px;}
-  .fact{display:flex;align-items:center;gap:10px;font-family:var(--font-body);font-size:13.5px;color:var(--ink-soft);font-weight:500;}
-  .fact .ic{font-size:18px;}
+  .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
 
-  .hero-frame{position:relative;}
-  .hero-frame iframe{
-    display:block;
-    width:100%;
-    min-height:760px;
-    border:0;
-    border-radius:18px;
-    box-shadow:var(--shadow);
+  .stats{
+    display:flex;flex-wrap:wrap;gap:38px;
+    margin-top:52px;padding-top:28px;
+    border-top:1px solid rgba(255,255,255,.22);
   }
-  /* Keep the design tool wide enough (>=880px) for its side-by-side layout:
-     stack the hero into one column before the iframe column gets too narrow. */
-  @media (max-width:1400px){
-    .hero-grid{grid-template-columns:1fr;gap:36px;max-width:1180px;}
-    .hero-frame iframe{min-height:760px;}
-  }
+  .stat-n{font-family:var(--font-display);font-size:32px;font-weight:700;color:#fff;line-height:1.25;}
+  .stat-l{font-size:var(--fs-label);color:rgba(255,255,255,.7);margin-top:5px;}
 
-  /* ---------- RIBBON DIVIDER ---------- */
-  .ribbon-edge{
-    width:100%;height:34px;
-    background:var(--red-darker);
-    clip-path:polygon(0 0,100% 0,100% 55%,96% 100%,92% 55%,88% 100%,84% 55%,80% 100%,76% 55%,72% 100%,68% 55%,64% 100%,60% 55%,56% 100%,52% 55%,48% 100%,44% 55%,40% 100%,36% 55%,32% 100%,28% 55%,24% 100%,20% 55%,16% 100%,12% 55%,8% 100%,4% 55%,0 100%);
+  @media (prefers-reduced-motion:reduce){
+    .hero-video{display:none;}   /* the poster stays via the section background */
+    .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
   }
-  .ribbon-edge.flip{transform:scaleY(-1);}
-  .ribbon-edge.gold{background:var(--gold);}
-
   /* ---------- TRUST MARQUEE ---------- */
   .trust{
     background:var(--red-darker);
@@ -294,16 +306,6 @@
   .svc-num{font-family:var(--font-body);font-size:12px;color:var(--gold);font-weight:600;letter-spacing:.1em;margin-bottom:8px;}
   .svc-body h3{font-size:21px;margin-bottom:10px;color:var(--red-darker);}
   .svc-body p{font-size:14.5px;color:var(--ink-soft);flex:1;}
-
-  /* ---------- FEATURES STRIP ---------- */
-  .feat-strip{
-    background:var(--blush);
-    padding:38px 0;
-  }
-  .feat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
-  .feat-item{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;}
-  .feat-item .ic{font-size:26px;}
-  .feat-item span{font-family:var(--font-body);font-size:13.5px;font-weight:600;color:var(--red-darker);}
 
   /* ---------- PROCESS ---------- */
   .process{padding:90px 0;background:var(--paper);}
@@ -377,11 +379,7 @@
   @media (max-width:900px){
     nav.links{display:none;}
     .menu-toggle{display:block;}
-    .hero-grid{grid-template-columns:1fr;}
-    .hero-frame{order:-1;margin:0 auto 20px;}
-    .hero-frame iframe{min-height:900px;}
     .svc-grid{grid-template-columns:1fr;}
-    .feat-grid{grid-template-columns:1fr 1fr;}
     .steps{grid-template-columns:1fr;}
     .gal-grid{grid-template-columns:repeat(2,1fr);}
     .story-grid{grid-template-columns:1fr;}
