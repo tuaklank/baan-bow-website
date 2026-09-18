@@ -427,13 +427,31 @@
   .story-text h2{color:#fff;font-size:clamp(24px,3vw,32px);margin-bottom:18px;}
   .story-text p{color:rgba(255,255,255,.82);font-size:15.5px;max-width:520px;}
 
-  /* ---------- CTA BANNER ---------- */
-  .cta-banner{
-    background:var(--red);color:#fff;padding:64px 0;text-align:center;
+  /* ---------- DESIGN-TOOL PROMO BAND ---------- */
+  .promo{padding:70px 0;}
+  .promo-card{
+    position:relative;overflow:hidden;
+    border-radius:var(--r-card);border:1px solid var(--brand-deep);
+    background:linear-gradient(120deg,var(--brand-deep),var(--brand-deep-end));
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
   }
-  .cta-banner h2{color:#fff;font-size:clamp(24px,3.2vw,34px);margin-bottom:14px;}
-  .cta-banner p{color:rgba(255,255,255,.88);margin-bottom:30px;font-size:15.5px;}
-  .cta-btns{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;}
+  .promo-copy{
+    padding:clamp(30px,4vw,54px);
+    display:flex;flex-direction:column;justify-content:center;gap:18px;
+  }
+  .promo-eyebrow{color:var(--accent-light);margin-bottom:0;}
+  .promo-copy h3{
+    font-size:var(--fs-h3);font-weight:700;line-height:1.3;color:#fff;margin:0;
+  }
+  .promo-copy p{
+    font-size:15.5px;line-height:1.7;color:rgba(255,255,255,.82);margin:0;
+  }
+  .promo-cta{align-self:flex-start;margin-top:6px;}
+  .promo-photo{
+    min-height:280px;
+    background-image:url('assets/car-grey.jpg');
+    background-size:cover;background-position:center;
+  }
 
   /* ---------- FOOTER ---------- */
   footer{background:var(--red-darker);color:rgba(255,255,255,.75);padding:56px 0 26px;}
