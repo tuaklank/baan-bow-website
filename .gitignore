@@ -1,8 +1,30 @@
-assets/
+# Assets are ignored by default; the files the new design actually ships are
+# un-ignored explicitly below so a fresh clone renders the site.
+assets/*
+assets/legacy/
 
 # Design tool assets are required for the site to render (car photos, masks, logo)
 !design-tool/assets/
 !design-tool/assets/**
+
+# --- assets shipped by the 2026 design ---
+!assets/baanbow-logo.png
+!assets/car-grey.jpg
+!assets/hero-drone.mp4
+!assets/hero-drone.webm
+!assets/hero-poster.jpg
+!assets/bow-1-360.mp4
+!assets/bow-2-360.mp4
+!assets/bow-3-360.mp4
+!assets/bow-4-360.mp4
+!assets/booth-1.jpg
+!assets/booth-2.jpg
+!assets/booth-3.jpg
+!assets/booth-4.jpg
+!assets/booth-5.jpg
+!assets/booth-6.jpg
+!assets/booth-7.jpg
+!assets/w-*.webp
 
 # Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
 uploads/
