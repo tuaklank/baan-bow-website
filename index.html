@@ -406,6 +406,19 @@
   },{threshold:0.15});
   document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
+  // If the page loads in a background tab the browser pauses every video and
+  // the autoplay promise rejects, so without this they stay paused once the
+  // visitor finally switches to the tab. Muted-only, so no sound can start.
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) return;
+    document.querySelectorAll('video').forEach(v=>{
+      if(!v.paused) return;
+      v.muted = true;
+      const p = v.play();
+      if(p && p.catch) p.catch(()=>{});
+    });
+  });
+
   // product showroom slider
   (function(){
     const track = document.getElementById('productTrack');
@@ -419,7 +432,8 @@
     // Card videos are always muted and independent of anything else on the
     // page. Browsers still block autoplay unless muted is set from script, and
     // the first play() can land before the data does -- hence the canplay retry.
-    track.querySelectorAll('video').forEach(v=>{
+    const vids = [...track.querySelectorAll('video')];
+    vids.forEach(v=>{
       v.muted = true;
       const go = ()=>{ const p = v.play(); if(p && p.catch) p.catch(()=>{}); };
       go();
