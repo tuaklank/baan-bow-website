@@ -398,21 +398,28 @@
   .step p{font-size:14px;color:var(--ink-soft);margin:0;}
 
   /* ---------- GALLERY ---------- */
-  .gallery{padding:90px 0 40px;background:var(--paper);}
-  .gal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+  .gallery{padding:50px 0 40px;}
+  .gal-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(clamp(148px,19vw,224px),1fr));
+    gap:var(--grid-gap);
+  }
   .gal-item{
-    position:relative;border-radius:14px;overflow:hidden;aspect-ratio:1/1;
-    box-shadow:0 10px 24px -14px rgba(var(--brand-deep-rgb),.3);
+    position:relative;aspect-ratio:1;border-radius:var(--r-tile);overflow:hidden;
+    background:var(--media-bg);box-shadow:var(--sh-tile);
   }
-  .gal-item img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease;}
-  .gal-item:hover img{transform:scale(1.08);}
-  .gal-cap{
-    position:absolute;inset:auto 0 0 0;padding:10px 12px 12px;
-    background:linear-gradient(to top, rgba(var(--scrim-rgb),.85), rgba(var(--scrim-rgb),0));
-    color:#fff;font-family:var(--font-body);font-size:12.5px;font-weight:600;
-    opacity:0;transform:translateY(6px);transition:opacity .3s ease, transform .3s ease;
+  .gal-item img{width:100%;height:100%;object-fit:cover;display:block;}
+  /* 13th tile: sends people into the design tool instead of showing work */
+  .gal-cta{
+    display:flex;flex-direction:column;justify-content:flex-end;gap:10px;
+    aspect-ratio:1;border-radius:var(--r-tile);padding:18px;
+    background:var(--brand-deep);color:#fff;
+    transition:background .2s ease;
   }
-  .gal-item:hover .gal-cap{opacity:1;transform:translateY(0);}
+  .gal-cta:hover{background:var(--brand);}
+  .gal-cta-title{font-family:var(--font-display);font-weight:700;font-size:19px;line-height:1.35;}
+  .gal-cta-sub{font-size:var(--fs-label);color:var(--muted-light);}
+  .gal-cta:hover .gal-cta-sub{color:#fff;}
 
   /* ---------- STORY ---------- */
   .story{padding:90px 0;background:var(--red-darker);color:var(--cream);overflow:hidden;}
@@ -474,7 +481,6 @@
     nav.links{display:none;}
     .menu-toggle{display:block;}
     .steps{grid-template-columns:1fr;}
-    .gal-grid{grid-template-columns:repeat(2,1fr);}
     .story-grid{grid-template-columns:1fr;}
     .story-photo{max-width:320px;margin:0 auto;}
     .foot-grid{grid-template-columns:1fr;gap:28px;}
