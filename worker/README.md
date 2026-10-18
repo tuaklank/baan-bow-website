@@ -86,7 +86,12 @@ baanbow.online/admin*           www.baanbow.online/admin*
 
 > **ทำไม 6 เส้น** — `baanbow.online` กับ `www.baanbow.online` เสิร์ฟ 200 ทั้งคู่ ไม่ redirect หากัน ถ้าผูกแค่ apex แล้ว LINE ยิง webhook มาที่ `www` จะตก 404 เงียบๆ
 >
-> **ชนกับเว็บเดิมไหม** — ไม่ชน Cloudflare เลือก route ที่เจาะจงกว่าเสมอ 3 path นี้เข้า Worker ใหม่ ที่เหลือไปที่ deploy เดิม ใช้ได้ทั้งกรณีเว็บเดิมเป็น Pages และเป็น Worker static assets
+> **ชนกับเว็บเดิมไหม** — ไม่ชน เว็บเดิมคือ Worker ชื่อ `baan-bow-website` ผูกแบบ **Custom Domain**
+> (หน้า Workers Routes ของโดเมนว่างเปล่า) ซึ่ง Cloudflare ระบุว่า route **ชนะ** Custom Domain บนโฮสต์เดียวกัน
+> → 3 path นี้เข้า Worker ใหม่ ที่เหลือยังไปที่ `baan-bow-website` เหมือนเดิม
+> ดู "Interaction with Routes" ใน <https://developers.cloudflare.com/workers/configuration/routing/custom-domains/>
+>
+> route ต้องการให้โฮสต์นั้นมี DNS record แบบ proxied อยู่ก่อน — Custom Domain สร้างให้แล้วทั้งสองโฮสต์ ไม่ต้องทำอะไรเพิ่ม
 
 ### 6. ตั้ง LINE webhook แล้วหา userId
 
@@ -199,6 +204,15 @@ npx wrangler dev
 Cron ไม่ยิงเองตอน dev — ทดสอบด้วย `curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled"`
 
 ---
+
+## เว็บเดิม deploy ยังไง (บันทึกไว้กันลืม)
+
+- เว็บ `baanbow.online` คือ Worker ชื่อ **`baan-bow-website`** แบบ static assets ไม่ใช่ Cloudflare Pages
+- **ไม่ได้ต่อกับ GitHub** — `main` บน GitHub มีแค่ 3 ไฟล์ ค้างไว้ตั้งแต่ก่อนรีดีไซน์ ส่วนเว็บจริงอัปตรงจากเครื่อง
+  แปลว่า `git push` ไม่มีผลกับเว็บที่ขึ้นอยู่เลย และ `wrangler deploy` ของ Worker ตัวนี้ก็ไม่เกี่ยวกับ git เช่นกัน
+- เว็บเสิร์ฟ **ทั้งโฟลเดอร์** เป็นไฟล์ static (ลองดู `https://www.baanbow.online/.gitignore` โหลดได้จริง)
+  จึงมีไฟล์ [`.assetsignore`](../.assetsignore) ที่โฟลเดอร์แม่ กัน `worker/`, `node_modules/` และไฟล์อื่น
+  ไม่ให้ถูกอัปขึ้นตอน deploy เว็บ **อย่าลบไฟล์นั้น** ไม่งั้นโค้ดฝั่งเซิร์ฟเวอร์จะเปิดอ่านได้จากเน็ต
 
 ## หมายเหตุ
 
