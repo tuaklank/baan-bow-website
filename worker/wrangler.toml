@@ -1,0 +1,49 @@
+# Worker ระบบเอกสาร + ติดตามงาน ของ baanbow.online
+# แยกจาก deploy ของหน้าเว็บโดยสิ้นเชิง — ผูกแค่ 6 route ข้างล่าง
+# path อื่นทั้งหมด (/, styles.css, /design-tool/*, assets) ยังไปที่ deploy เดิมเหมือนเดิม
+name = "baanbow-office"
+main = "src/index.js"
+compatibility_date = "2026-10-18"
+# @anthropic-ai/sdk ต้องการ shim ของ node builtin บน Workers
+compatibility_flags = ["nodejs_compat"]
+
+# เวลาไทย = UTC+7 → 01:00 UTC คือ 08:00 น. ที่ไทย
+[triggers]
+crons = ["0 1 * * *"]
+
+[vars]
+CLAUDE_MODEL = "claude-sonnet-5-5"
+BASE_URL = "https://www.baanbow.online"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baanbow-office"
+# เติม database_id ที่ได้จาก `wrangler d1 create baanbow-office` (ดู README ข้อ 2)
+database_id = "PUT_D1_DATABASE_ID_HERE"
+migrations_dir = "migrations"
+
+# 6 เส้น ครบทั้ง apex และ www เพราะเว็บเสิร์ฟ 200 ทั้งสองโฮสต์ ไม่ redirect หากัน
+# ถ้าผูกแค่ apex แล้ว LINE ยิง webhook มาที่ www จะตก 404 เงียบๆ
+[[routes]]
+pattern = "baanbow.online/webhook"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "www.baanbow.online/webhook"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "baanbow.online/d/*"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "www.baanbow.online/d/*"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "baanbow.online/admin*"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "www.baanbow.online/admin*"
+zone_name = "baanbow.online"

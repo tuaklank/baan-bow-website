@@ -31,3 +31,6 @@ assets/legacy/
 uploads/
 design_handoff_baanbow_site/
 design-tool/uploads/
+
+# wrangler local state (worker/ มี .gitignore ของตัวเองอีกชั้น)
+.wrangler/

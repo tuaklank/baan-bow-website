@@ -1,0 +1,13 @@
+// อ่านคำตอบสั้นๆ จากข้อความตรงๆ ไม่ต้องเรียก AI (ถูกกว่าและไม่มีโอกาสเดาผิด)
+
+/**
+ * อ่านโหมด VAT จากข้อความ — เช็คคำว่า "ไม่" ก่อนเสมอ
+ * ไม่พบคำที่ชัดเจน คืน null (ระบบจะถามกลับ ห้ามเดาให้)
+ */
+export function readVatMode(text) {
+  const s = String(text).toLowerCase().replace(/\s+/g, '');
+  if (/(ไม่มีvat|ไม่คิดvat|novat|ไม่ต้องvat)/.test(s)) return 'none';
+  if (/(ไม่รวมvat|แยกvat|\+vat|บวกvat|vatแยก)/.test(s)) return 'exclusive';
+  if (/(รวมvat|vatin|ราคารวมภาษี|รวมภาษีแล้ว)/.test(s)) return 'inclusive';
+  return null;
+}
