@@ -2,10 +2,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  JOB_DEFAULT_DUE_DAYS, CRON_MORNING, CRON_EVENING, CRON_TEST, CRON_TEST_DATE,
+  JOB_DEFAULT_DUE_DAYS, CRON_MORNING, CRON_EVENING,
   JOB_STATUSES, JOB_OPEN_SQL,
 } from '../src/config.js';
-import { addDays, todayBkk, dayOfWeek, isValidYmd } from '../src/thai.js';
+import { addDays, todayBkk, dayOfWeek } from '../src/thai.js';
 
 test('ไม่ระบุกำหนดส่ง ใช้ 4 วันนับจากวันเปิดงาน', () => {
   assert.equal(JOB_DEFAULT_DUE_DAYS, 4);
@@ -32,23 +32,17 @@ test('cron เช้า 08:00 และเย็น 17:00 เวลาไทย 
 });
 
 test('cron ทุกตัวต้องไม่ซ้ำกัน ไม่งั้นแยกไม่ออกว่ารอบไหน', () => {
-  const all = [CRON_MORNING, CRON_EVENING, CRON_TEST];
+  const all = [CRON_MORNING, CRON_EVENING];
   assert.equal(new Set(all).size, all.length);
 });
 
-test('รอบทดสอบตั้งไว้ 20:00 น. เวลาไทย และผูกกับวันที่เดียว', () => {
-  assert.equal(CRON_TEST, '0 13 * * *');
-  assert.equal((Number(CRON_TEST.split(' ')[1]) + 7) % 24, 20);
-  assert.ok(isValidYmd(CRON_TEST_DATE), 'CRON_TEST_DATE ต้องเป็นวันที่จริง');
-});
-
-test('cron ที่ประกาศใน wrangler.toml ตรงกับที่โค้ดใช้เทียบ', async () => {
+test('cron ที่ประกาศใน wrangler.toml ตรงกับที่โค้ดใช้เทียบ — ไม่ขาดไม่เกิน', async () => {
+  // เกินก็ผิด: cron ที่โค้ดไม่รู้จักจะตกไปเข้า else แล้วส่งสรุปเช้าผิดเวลา
   const { readFileSync } = await import('node:fs');
   const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   const line = toml.split('\n').find((l) => l.trim().startsWith('crons'));
-  for (const c of [CRON_MORNING, CRON_EVENING, CRON_TEST]) {
-    assert.ok(line.includes(`"${c}"`), `wrangler.toml ขาด cron "${c}"`);
-  }
+  const declared = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(declared.sort(), [CRON_MORNING, CRON_EVENING].sort());
 });
 
 test('สถานะที่ถือว่า "ปิดแล้ว" ตรงกับที่ใช้กรองงานค้าง', () => {

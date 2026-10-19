@@ -21,7 +21,7 @@ export const SCHEMA = {
       enum: [
         'create_doc', 'convert_doc', 'void_doc',
         'create_job', 'job_from_doc', 'update_job', 'list_jobs',
-        'receive_stock', 'ship_job', 'count_stock', 'list_stock',
+        'receive_stock', 'ship_job', 'count_stock', 'list_stock', 'set_price',
         'add_expense',
         'search', 'month_summary', 'add_holiday',
         'help', 'unknown',
@@ -95,11 +95,12 @@ export const SCHEMA = {
     stock: {
       type: 'object',
       additionalProperties: false,
-      required: ['name', 'qty', 'unit_cost', 'note'],
+      required: ['name', 'qty', 'unit_cost', 'price', 'note'],
       properties: {
         name:      { type: 'string', description: 'ชื่อโบว์ ตัดคำสั่งออกให้เหลือแต่ชื่อสินค้า' },
         qty:       { type: 'number', description: 'จำนวนชิ้น เป็นจำนวนเต็มบวก ไม่ระบุให้ใส่ 0' },
-        unit_cost: { type: 'number', description: 'ต้นทุนต่อชิ้นเป็นบาท ไม่บอกให้ใส่ 0' },
+        unit_cost: { type: 'number', description: 'ต้นทุนต่อชิ้นเป็นบาท (ทุนที่ซื้อมา) ไม่บอกให้ใส่ 0' },
+        price:     { type: 'number', description: 'ราคาขายต่อชิ้นเป็นบาท ไม่บอกให้ใส่ 0' },
         note:      { type: 'string' },
       },
     },
@@ -124,7 +125,7 @@ export const EMPTY = {
   payment_terms: null, note: null, from_doc_no: null, doc_no: null, query: null,
   job: { ref: null, title: null, due_date: null, status: null, note: null },
   holiday: { date: null, name: null },
-  stock: { name: null, qty: 0, unit_cost: null, note: null },
+  stock: { name: null, qty: 0, unit_cost: null, price: null, note: null },
   expense: { category: null, amount: 0, spent_date: null, note: null },
   failed: null,
 };
@@ -175,6 +176,7 @@ function normalize(raw) {
       name: str(st.name),
       qty: Math.round(num(st.qty)),
       unit_cost: num(st.unit_cost) > 0 ? num(st.unit_cost) : null,
+      price: num(st.price) > 0 ? num(st.price) : null,
       note: str(st.note),
     },
     expense: {
@@ -217,6 +219,9 @@ function systemPrompt(today) {
 - นับสต๊อกแล้วตั้งยอดใหม่ เช่น "ปรับสต๊อก โบว์แดง = 12" "นับได้ โบว์แดง 12" = count_stock
   (stock.name + stock.qty = จำนวนที่นับได้จริง ไม่ใช่ส่วนต่าง)
 - ดูสต๊อก เช่น "สต๊อก" "สต๊อกเหลือเท่าไร" = list_stock (ถามตัวใดตัวหนึ่งให้ใส่ stock.name)
+- ตั้งต้นทุน/ราคาขาย โดยไม่ได้รับของเข้า เช่น "ต้นทุน โบว์แบบที่1 45" "ราคาขาย โบว์แดง 99"
+  "โบว์แดง ทุน 45 ขาย 99" = set_price (stock.name + stock.unit_cost และ/หรือ stock.price)
+  ต่างจาก receive_stock ตรงที่ไม่มีจำนวนรับเข้า — มีจำนวนชิ้นที่รับเข้ามาด้วยเมื่อไหร่ให้เป็น receive_stock
 - บันทึกรายจ่าย เช่น "ค่าวัสดุ 450 ซื้อริบบิ้น" "ค่าส่ง 60 Kerry" "ค่าแรง 300 พี่หน่อย" = add_expense
   (expense.category ต้องเป็น 1 ใน 4 หมวด: ค่าวัสดุ ค่าส่ง ค่าแรง อื่นๆ
    ค่าเช่า ค่าน้ำค่าไฟ ค่าธรรมเนียม จัดเป็น "อื่นๆ"

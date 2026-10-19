@@ -12,9 +12,7 @@ compatibility_flags = ["nodejs_compat"]
 #   10:00 UTC = 17:00 น. ไทย — ทวงงานค้างก่อนเลิกงาน
 # แก้เวลาแล้วต้องแก้ CRON_MORNING / CRON_EVENING ใน src/config.js ให้ตรงกันด้วย
 [triggers]
-#   13:00 UTC = 20:00 น. ไทย — รอบทดสอบครั้งเดียว ถอดบรรทัดนี้ออกได้หลังทดสอบเสร็จ
-#                              (โค้ดกันไว้แล้วว่ายิงเฉพาะวันที่ CRON_TEST_DATE)
-crons = ["0 1 * * *", "0 10 * * *", "0 13 * * *"]
+crons = ["0 1 * * *", "0 10 * * *"]
 
 [vars]
 CLAUDE_MODEL = "claude-sonnet-5-5"

@@ -10,7 +10,7 @@ import {
   findCustomer, mergeCustomer, issueDocument, docByNo, voidDocument, searchDocs, monthSummary,
   createJob, jobById, jobByDocNo, findJobs, updateJob, addJobEvent, openJobs,
   savePending, takePending, clearPending, addHoliday, holidayOn,
-  findProduct, productKey, receiveStock, listStock, stockOf,
+  findProduct, productKey, upsertProduct, receiveStock, listStock, stockOf,
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
   addExpense, monthExpenses,
 } from './db.js';
@@ -37,6 +37,7 @@ export const HELP = `คำสั่งที่ใช้ได้
 
 📦 สต๊อก (นับเป็นชิ้น)
 • รับเข้า โบว์ริบบิ้นแดง 3        (ใส่ต้นทุนก็ได้ — ... 3 ต้นทุน 45)
+• โบว์แดง ทุน 45 ขาย 99          (ตั้งราคาอย่างเดียว ไม่แตะจำนวน)
 • สต๊อก   หรือ   สต๊อก โบว์แดง
 • ส่งของงาน 7                   (ตัดสต๊อกตามรายการในบิลของงานนั้น)
 • ปรับสต๊อก โบว์แดง = 12         (ตั้งยอดตามที่นับได้จริง)
@@ -513,6 +514,44 @@ async function doListStock(env, cmd) {
   ].filter((x) => x !== null).join('\n');
 }
 
+/**
+ * ตั้งต้นทุน/ราคาขาย โดยไม่แตะจำนวน — ใช้ตอนลืมใส่ต้นทุนตอนรับเข้า
+ * ไม่ต้องยืนยัน เพราะไม่กระทบยอดคงเหลือ และพิมพ์ใหม่ทับได้ทันทีถ้าใส่ผิด
+ * ไม่สร้างสินค้าใหม่ให้โดยตั้งใจ พิมพ์ชื่อผิดจะได้ไม่เกิดรายการผีที่ไม่มีของจริง
+ */
+async function doSetPrice(env, cmd) {
+  const db = env.DB;
+  const st = cmd.stock || {};
+  if (!st.name) return 'ระบุชื่อโบว์ด้วยครับ เช่น "ต้นทุน โบว์แบบที่1 45"';
+  if (st.unit_cost == null && st.price == null) {
+    return `จะตั้งต้นทุนหรือราคาขายเท่าไรครับ\nเช่น "ต้นทุน ${st.name} 45" หรือ "${st.name} ทุน 45 ขาย 99"`;
+  }
+
+  const p = await findProduct(db, st.name);
+  if (!p) {
+    return `ไม่มี "${st.name}" ในสต๊อกครับ\n`
+      + `ตั้งราคาได้เฉพาะของที่มีรายการแล้ว — ถ้าเป็นของใหม่ใช้ "รับเข้า ${st.name} 1" ก่อน`;
+  }
+
+  const cost = st.unit_cost != null ? toSatang(st.unit_cost) : null;
+  const price = st.price != null ? toSatang(st.price) : null;
+  // ส่ง null ไปช่องไหน ช่องนั้นเก็บค่าเดิมไว้ (COALESCE ใน upsertProduct)
+  const after = await upsertProduct(db, { name: p.name, cost, price });
+
+  const changed = [
+    cost != null ? `ต้นทุน ${p.cost != null ? fmtBaht(p.cost) + ' → ' : ''}${fmtBaht(after.cost)}` : null,
+    price != null ? `ราคาขาย ${p.price != null ? fmtBaht(p.price) + ' → ' : ''}${fmtBaht(after.price)}` : null,
+  ].filter(Boolean);
+
+  const s = await stockOf(db, p.id);
+  const margin = after.cost != null && after.price != null ? after.price - after.cost : null;
+
+  return `🏷 ${after.name}\n` + changed.map((x) => '• ' + x).join('\n')
+    + (margin != null ? `\nกำไรต่อ${after.unit} ${fmtBaht(margin)} บาท` : '')
+    + `\n\nคงเหลือ ${s.qty} ${after.unit} (ไม่เปลี่ยน)`
+    + (after.cost != null && s.qty > 0 ? `\nมูลค่าสต๊อกตัวนี้ ${fmtBaht(s.qty * after.cost)} บาท` : '');
+}
+
 /** ปรับยอดต้องยืนยัน เพราะเป็นการทับยอดเดิม และกันกรณี AI อ่านจำนวนไม่ออกแล้วได้ 0 */
 async function doCountStock(env, uid, cmd) {
   const db = env.DB;
@@ -746,6 +785,7 @@ export async function handleText(env, uid, text) {
     case 'receive_stock': return doReceiveStock(env, cmd);
     case 'list_stock':    return doListStock(env, cmd);
     case 'count_stock':   return doCountStock(env, uid, cmd);
+    case 'set_price':     return doSetPrice(env, cmd);
     case 'ship_job':      return doShipJob(env, uid, cmd);
     case 'add_expense':   return doAddExpense(env, cmd);
     case 'job_from_doc':  return doJobFromDoc(env, cmd);

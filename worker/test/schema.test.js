@@ -46,6 +46,6 @@ test('intent ครอบคลุมทุกคำสั่งที่ handle
   assert.deepEqual([...SCHEMA.properties.intent.enum].sort(), [
     'add_expense', 'add_holiday', 'convert_doc', 'count_stock', 'create_doc', 'create_job',
     'help', 'job_from_doc', 'list_jobs', 'list_stock', 'month_summary', 'receive_stock',
-    'search', 'ship_job', 'unknown', 'update_job', 'void_doc',
+    'search', 'set_price', 'ship_job', 'unknown', 'update_job', 'void_doc',
   ].sort());
 });
