@@ -1,6 +1,6 @@
-// หน้าหลังบ้านสำหรับมือถือ — 3 แท็บ งาน / เอกสาร / สรุป
+// หน้าหลังบ้านสำหรับมือถือ — 5 แท็บ งาน / เอกสาร / สต๊อก / รายจ่าย / สรุป
 // ไม่มีระบบ login ในนี้ ตั้งใจให้ Cloudflare Access กั้นหน้า /admin จากข้างนอก
-import { TYPES, getSeller } from './config.js';
+import { TYPES, EXPENSE_CATEGORIES, getSeller } from './config.js';
 import { thaiDateShort, thaiDate, thaiMonth, fmtBaht } from './thai.js';
 import { esc } from './render.js';
 
@@ -12,8 +12,9 @@ header{position:sticky;top:0;z-index:10;background:linear-gradient(90deg,var(--w
 header h1{font-size:18px;font-weight:600;letter-spacing:.5px}
 header .date{font-size:12px;opacity:.85;margin-bottom:10px}
 nav{display:flex;gap:4px}
-nav a{flex:1;text-align:center;padding:9px 4px;font-size:14px;font-weight:500;color:#fff;text-decoration:none;
-  border-radius:8px 8px 0 0;background:rgba(0,0,0,.18)}
+/* 5 แท็บต้องพอดีจอ 360px จึงบีบ font กับ padding ลง ไม่ให้ตกบรรทัด */
+nav a{flex:1;min-width:0;text-align:center;padding:9px 2px;font-size:13px;font-weight:500;color:#fff;text-decoration:none;
+  border-radius:8px 8px 0 0;background:rgba(0,0,0,.18);white-space:nowrap}
 nav a.on{background:var(--bg);color:var(--wine);font-weight:600}
 main{padding:14px 12px}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;
@@ -32,6 +33,7 @@ main{padding:14px 12px}
 a.doc{display:block;text-decoration:none;color:inherit}
 .no{font-family:'Sarabun';font-weight:600;color:var(--wine)}
 .amt{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.negqty{color:var(--wine)}
 .void{text-decoration:line-through;opacity:.55}
 form.search{display:flex;gap:8px;margin-bottom:12px}
 form.search input{flex:1;min-width:0;font:400 15px 'Sarabun';padding:10px 12px;border:1px solid var(--line);
@@ -46,7 +48,8 @@ form.search button{font:600 14px 'Sarabun';border:0;border-radius:10px;padding:1
 footer{text-align:center;font-size:10px;letter-spacing:2px;color:var(--gold);margin-top:18px;text-transform:uppercase}
 `;
 
-const TAB_LABEL = { jobs: 'งาน', docs: 'เอกสาร', summary: 'สรุป' };
+export const TABS = ['jobs', 'docs', 'stock', 'expenses', 'summary'];
+const TAB_LABEL = { jobs: 'งาน', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', summary: 'สรุป' };
 
 const statusClass = (s) => (s === 'กำลังทำ' ? 'doing' : s === 'รอลูกค้า' ? 'waiting' : '');
 
@@ -76,7 +79,61 @@ function docCard(d) {
   </div></a>`;
 }
 
-function summaryView(s, openCount, lateCount, todayCount) {
+function stockCard(p) {
+  const neg = p.qty < 0;
+  const zero = p.qty === 0;
+  return `<div class="card">
+  <div class="row"><h3>${esc(p.name)}</h3><span class="amt${neg ? ' negqty' : ''}">${p.qty} ${esc(p.unit)}</span></div>
+  <div class="meta">${
+    p.cost != null ? `<span>ต้นทุน ${fmtBaht(p.cost)}/${esc(p.unit)}</span>` : '<span>ยังไม่ได้ใส่ต้นทุน</span>'
+  }${p.price != null ? `<span>ขาย ${fmtBaht(p.price)}</span>` : ''}${
+    neg ? '<span class="tag late">ติดลบ</span>' : zero ? '<span class="tag">หมด</span>' : ''
+  }</div>
+</div>`;
+}
+
+function stockView(rows, value) {
+  if (!rows.length) return '<p class="empty">ยังไม่มีรายการในสต๊อก<br>สั่ง "รับเข้า โบว์ริบบิ้นแดง 3" ทางไลน์ได้เลย</p>';
+  const neg = rows.filter((r) => r.qty < 0).length;
+  const pieces = rows.reduce((a, r) => a + Math.max(0, r.qty), 0);
+  return `<div class="sum">
+  <h2>สต๊อก ${rows.length} รายการ</h2>
+  <div class="line"><span>รวมของที่มี</span><b>${pieces} ชิ้น</b></div>
+  <div class="line"><span>มูลค่าตามต้นทุน</span><b>${fmtBaht(value?.value || 0)}</b></div>
+  ${value?.unpriced ? `<div class="line"><span>ยังไม่ได้ใส่ต้นทุน (ไม่นับในมูลค่า)</span><b>${value.unpriced} รายการ</b></div>` : ''}
+  ${neg ? `<div class="line"><span>ยอดติดลบ</span><b style="color:var(--wine)">${neg} รายการ</b></div>` : ''}
+</div>
+${rows.map(stockCard).join('\n')}`;
+}
+
+function expenseCard(e) {
+  return `<div class="card">
+  <div class="row"><h3>${esc(e.category)}</h3><span class="amt">${fmtBaht(e.amount)}</span></div>
+  <div class="meta"><span>${thaiDateShort(e.spent_date)}</span>${
+    e.note ? `<span>${esc(e.note)}</span>` : ''
+  }${e.job_id ? `<span>งาน #${e.job_id}</span>` : ''}<span>${esc(getSeller(e.seller).label)}</span></div>
+</div>`;
+}
+
+function expensesView(rows, month) {
+  if (!rows.length) return '<p class="empty">ยังไม่มีรายจ่าย<br>สั่ง "ค่าวัสดุ 450 ซื้อริบบิ้น" ทางไลน์ได้เลย</p>';
+  // สรุปหัวหน้าเป็นของ "เดือนนี้" ส่วนการ์ดข้างล่างเป็นรายการล่าสุดย้อนหลัง ไม่จำกัดเดือน
+  const byCat = new Map();
+  for (const r of month) {
+    const cur = byCat.get(r.category) ?? 0;
+    byCat.set(r.category, cur + r.total);
+  }
+  const total = month.reduce((a, r) => a + r.total, 0);
+  return `<div class="sum">
+  <h2>รายจ่ายเดือนนี้</h2>
+  ${EXPENSE_CATEGORIES.filter((c) => byCat.has(c))
+    .map((c) => `<div class="line"><span>${esc(c)}</span><b>${fmtBaht(byCat.get(c))}</b></div>`).join('')}
+  <div class="line grand"><span>รวม</span><b>${fmtBaht(total)}</b></div>
+</div>
+${rows.map(expenseCard).join('\n')}`;
+}
+
+function summaryView(s, openCount, lateCount, todayCount, monthExp, stock) {
   // แยกกล่องตามบริษัท — คนละนิติบุคคล ยื่น VAT คนละชุด ห้ามเอายอดมารวมกัน
   const bySeller = new Map();
   for (const r of s.byType) {
@@ -102,8 +159,38 @@ function summaryView(s, openCount, lateCount, todayCount) {
   <div class="line"><span>ยังไม่มีเอกสารเดือนนี้</span><b>0.00</b></div>
 </div>`;
 
+  const income = s.byType.reduce((a, r) => a + r.total, 0);
+  const spent = (monthExp || []).reduce((a, r) => a + r.total, 0);
+  const left = income - spent;
+
+  const expByCat = new Map();
+  for (const r of monthExp || []) expByCat.set(r.category, (expByCat.get(r.category) ?? 0) + r.total);
+
   return `${blocks}
 ${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><span>เอกสารที่ยกเลิก (ไม่นับในยอด)</span><b>${s.voidCount} ใบ</b></div></div>` : ''}
+
+<div class="sum">
+  <h2>รายจ่าย · ${esc(thaiMonth(s.month))}</h2>
+  ${expByCat.size
+    ? EXPENSE_CATEGORIES.filter((c) => expByCat.has(c))
+      .map((c) => `<div class="line"><span>${esc(c)}</span><b>${fmtBaht(expByCat.get(c))}</b></div>`).join('')
+    : '<div class="line"><span>ยังไม่ได้บันทึกรายจ่ายเดือนนี้</span><b>0.00</b></div>'}
+  <div class="line grand"><span>รวมรายจ่าย</span><b>${fmtBaht(spent)}</b></div>
+</div>
+
+<div class="sum">
+  <h2>รายรับ − รายจ่าย</h2>
+  <div class="line"><span>รายรับ (เอกสารที่ออก)</span><b>${fmtBaht(income)}</b></div>
+  <div class="line"><span>รายจ่าย</span><b>${fmtBaht(spent)}</b></div>
+  <div class="line grand"><span>เหลือ</span><b>${fmtBaht(left)}</b></div>
+</div>
+
+<div class="sum">
+  <h2>สต๊อก</h2>
+  <div class="line"><span>รายการในสต๊อก</span><b>${stock?.count ?? 0}</b></div>
+  <div class="line"><span>มูลค่าตามต้นทุน</span><b>${fmtBaht(stock?.value || 0)}</b></div>
+  ${stock?.negative ? `<div class="line"><span>ยอดติดลบ</span><b style="color:var(--wine)">${stock.negative} รายการ</b></div>` : ''}
+</div>
 
 <div class="sum">
   <h2>งาน</h2>
@@ -113,7 +200,7 @@ ${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><
 </div>`;
 }
 
-export function renderAdmin({ tab, today, jobs, docs, summary, q }) {
+export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp }) {
   let body;
   if (tab === 'jobs') {
     body = jobs.length ? jobs.map((j) => jobCard(j, today)).join('\n') : '<p class="empty">ไม่มีงานค้าง 🎉</p>';
@@ -127,13 +214,21 @@ export function renderAdmin({ tab, today, jobs, docs, summary, q }) {
   <button type="submit">ค้นหา</button>
 </form>
 ${list}`;
+  } else if (tab === 'stock') {
+    body = stockView(stock || [], stockVal);
+  } else if (tab === 'expenses') {
+    body = expensesView(expenses || [], monthExp || []);
   } else {
     const late = jobs.filter((j) => j.due_date && j.due_date < today).length;
     const due = jobs.filter((j) => j.due_date === today).length;
-    body = summaryView(summary, jobs.length, late, due);
+    body = summaryView(summary, jobs.length, late, due, monthExp, {
+      count: (stock || []).length,
+      value: stockVal?.value || 0,
+      negative: (stock || []).filter((r) => r.qty < 0).length,
+    });
   }
 
-  const nav = ['jobs', 'docs', 'summary']
+  const nav = TABS
     .map((k) => `<a class="${k === tab ? 'on' : ''}" href="/admin?tab=${k}">${TAB_LABEL[k]}</a>`)
     .join('');
 

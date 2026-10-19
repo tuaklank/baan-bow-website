@@ -5,9 +5,12 @@
 import { verifySignature, reply, push } from './line.js';
 import { handleText, morningDigest, eveningDigest } from './handlers.js';
 import { CRON_EVENING, CRON_TEST, CRON_TEST_DATE } from './config.js';
-import { docByToken, recentDocs, searchDocs, openJobs, monthSummary } from './db.js';
+import {
+  docByToken, recentDocs, searchDocs, openJobs, monthSummary,
+  listStock, stockValue, recentExpenses, monthExpenses,
+} from './db.js';
 import { renderDoc } from './render.js';
-import { renderAdmin } from './admin.js';
+import { renderAdmin, TABS } from './admin.js';
 import { todayBkk, monthBkk } from './thai.js';
 
 const html = (body, status = 200) => new Response(body, {
@@ -63,19 +66,28 @@ async function handleDoc(url, env) {
 }
 
 async function handleAdmin(url, env) {
-  const tab = ['jobs', 'docs', 'summary'].includes(url.searchParams.get('tab'))
-    ? url.searchParams.get('tab') : 'jobs';
+  const asked = url.searchParams.get('tab');
+  const tab = TABS.includes(asked) ? asked : 'jobs';
   const q = (url.searchParams.get('q') || '').trim();
   const today = todayBkk();
+  const ym = monthBkk();
 
-  // แท็บงานกับแท็บสรุปใช้รายการงานชุดเดียวกัน ดึงครั้งเดียวพอ
-  const [jobs, docs, summary] = await Promise.all([
-    tab === 'docs' ? Promise.resolve([]) : openJobs(env.DB),
-    tab === 'docs' ? (q ? searchDocs(env.DB, q, 50) : recentDocs(env.DB, 50)) : Promise.resolve([]),
-    tab === 'summary' ? monthSummary(env.DB, monthBkk()) : Promise.resolve(null),
+  // ดึงเฉพาะที่แท็บนั้นใช้ — แท็บสรุปใช้เกือบทุกชุด แท็บอื่นใช้ชุดเดียว
+  const needJobs = tab === 'jobs' || tab === 'summary';
+  const needStock = tab === 'stock' || tab === 'summary';
+  const needMonthExp = tab === 'expenses' || tab === 'summary';
+
+  const [jobs, docs, summary, stock, stockVal, expenses, monthExp] = await Promise.all([
+    needJobs ? openJobs(env.DB) : [],
+    tab === 'docs' ? (q ? searchDocs(env.DB, q, 50) : recentDocs(env.DB, 50)) : [],
+    tab === 'summary' ? monthSummary(env.DB, ym) : null,
+    needStock ? listStock(env.DB) : [],
+    needStock ? stockValue(env.DB) : null,
+    tab === 'expenses' ? recentExpenses(env.DB, 50) : [],
+    needMonthExp ? monthExpenses(env.DB, ym) : [],
   ]);
 
-  return html(renderAdmin({ tab, today, jobs, docs, summary, q }));
+  return html(renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp }));
 }
 
 export default {

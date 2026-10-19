@@ -13,6 +13,7 @@ export const SCHEMA = {
   required: [
     'intent', 'doc_type', 'seller', 'customer', 'items', 'discount', 'vat_mode', 'wht_percent',
     'payment_terms', 'note', 'from_doc_no', 'doc_no', 'query', 'job', 'holiday',
+    'stock', 'expense',
   ],
   properties: {
     intent: {
@@ -20,6 +21,8 @@ export const SCHEMA = {
       enum: [
         'create_doc', 'convert_doc', 'void_doc',
         'create_job', 'job_from_doc', 'update_job', 'list_jobs',
+        'receive_stock', 'ship_job', 'count_stock', 'list_stock',
+        'add_expense',
         'search', 'month_summary', 'add_holiday',
         'help', 'unknown',
       ],
@@ -89,6 +92,28 @@ export const SCHEMA = {
         name: { type: 'string' },
       },
     },
+    stock: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name', 'qty', 'unit_cost', 'note'],
+      properties: {
+        name:      { type: 'string', description: 'ชื่อโบว์ ตัดคำสั่งออกให้เหลือแต่ชื่อสินค้า' },
+        qty:       { type: 'number', description: 'จำนวนชิ้น เป็นจำนวนเต็มบวก ไม่ระบุให้ใส่ 0' },
+        unit_cost: { type: 'number', description: 'ต้นทุนต่อชิ้นเป็นบาท ไม่บอกให้ใส่ 0' },
+        note:      { type: 'string' },
+      },
+    },
+    expense: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['category', 'amount', 'spent_date', 'note'],
+      properties: {
+        category:   { type: 'string', description: 'ค่าวัสดุ | ค่าส่ง | ค่าแรง | อื่นๆ' },
+        amount:     { type: 'number', description: 'ยอดเป็นบาท ตามที่ผู้ใช้พิมพ์' },
+        spent_date: { type: 'string', description: 'YYYY-MM-DD ค.ศ. ไม่บอกวันให้ใส่ "" (ระบบใช้วันนี้)' },
+        note:       { type: 'string', description: 'จ่ายค่าอะไร ร้านไหน' },
+      },
+    },
   },
 };
 
@@ -99,6 +124,8 @@ export const EMPTY = {
   payment_terms: null, note: null, from_doc_no: null, doc_no: null, query: null,
   job: { ref: null, title: null, due_date: null, status: null, note: null },
   holiday: { date: null, name: null },
+  stock: { name: null, qty: 0, unit_cost: null, note: null },
+  expense: { category: null, amount: 0, spent_date: null, note: null },
   failed: null,
 };
 
@@ -113,6 +140,8 @@ function normalize(raw) {
   const c = raw.customer ?? {};
   const j = raw.job ?? {};
   const h = raw.holiday ?? {};
+  const st = raw.stock ?? {};
+  const ex = raw.expense ?? {};
   return {
     intent: raw.intent || 'unknown',
     doc_type: str(raw.doc_type),
@@ -142,6 +171,18 @@ function normalize(raw) {
       status: str(j.status), note: str(j.note),
     },
     holiday: { date: str(h.date), name: str(h.name) },
+    stock: {
+      name: str(st.name),
+      qty: Math.round(num(st.qty)),
+      unit_cost: num(st.unit_cost) > 0 ? num(st.unit_cost) : null,
+      note: str(st.note),
+    },
+    expense: {
+      category: str(ex.category),
+      amount: num(ex.amount),
+      spent_date: str(ex.spent_date),
+      note: str(ex.note),
+    },
     failed: null,
   };
 }
@@ -169,7 +210,17 @@ function systemPrompt(today) {
 - อัปเดตงาน/งานเสร็จแล้ว/เลื่อนกำหนด = update_job (job.ref + job.status)
 - งานค้าง/งานวันนี้/งานทั้งหมด = list_jobs
 - หา/ค้นหา/มีบิลอะไรบ้าง ตามด้วยเลขที่เอกสารหรือชื่อลูกค้า = search (ใส่ query)
-- สรุปเดือนนี้/ยอดเดือนนี้ = month_summary
+- สรุปเดือนนี้/ยอดเดือนนี้/รายรับรายจ่าย/กำไร = month_summary
+- รับของเข้าสต๊อก เช่น "รับเข้า โบว์ริบบิ้นแดง 3" "เพิ่มสต๊อก โบว์ทองคำ 10 ชิ้น ต้นทุน 45" = receive_stock
+  (stock.name = ชื่อโบว์, stock.qty = จำนวนชิ้น, stock.unit_cost = ต้นทุนต่อชิ้นถ้าบอกมา)
+- ส่งของแล้ว/ตัดสต๊อกของงาน เช่น "ส่งของงาน 7" "ส่งของ JOB 7 แล้ว" = ship_job (job.ref = เลขงาน)
+- นับสต๊อกแล้วตั้งยอดใหม่ เช่น "ปรับสต๊อก โบว์แดง = 12" "นับได้ โบว์แดง 12" = count_stock
+  (stock.name + stock.qty = จำนวนที่นับได้จริง ไม่ใช่ส่วนต่าง)
+- ดูสต๊อก เช่น "สต๊อก" "สต๊อกเหลือเท่าไร" = list_stock (ถามตัวใดตัวหนึ่งให้ใส่ stock.name)
+- บันทึกรายจ่าย เช่น "ค่าวัสดุ 450 ซื้อริบบิ้น" "ค่าส่ง 60 Kerry" "ค่าแรง 300 พี่หน่อย" = add_expense
+  (expense.category ต้องเป็น 1 ใน 4 หมวด: ค่าวัสดุ ค่าส่ง ค่าแรง อื่นๆ
+   ค่าเช่า ค่าน้ำค่าไฟ ค่าธรรมเนียม จัดเป็น "อื่นๆ"
+   ถ้าบอกว่าเป็นรายจ่ายของงานไหนให้ใส่ job.ref ด้วย)
 - เพิ่มวันหยุด = add_holiday (holiday.date + holiday.name)
 - ขอดูคำสั่ง/ช่วยด้วย = help
 - อ่านไม่ออกหรือไม่เข้าข้อไหน = unknown

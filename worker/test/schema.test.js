@@ -44,7 +44,8 @@ test('ทุก object ปิด additionalProperties และประกา�
 
 test('intent ครอบคลุมทุกคำสั่งที่ handlers รองรับ', () => {
   assert.deepEqual([...SCHEMA.properties.intent.enum].sort(), [
-    'add_holiday', 'convert_doc', 'create_doc', 'create_job', 'help', 'job_from_doc',
-    'list_jobs', 'month_summary', 'search', 'unknown', 'update_job', 'void_doc',
+    'add_expense', 'add_holiday', 'convert_doc', 'count_stock', 'create_doc', 'create_job',
+    'help', 'job_from_doc', 'list_jobs', 'list_stock', 'month_summary', 'receive_stock',
+    'search', 'ship_job', 'unknown', 'update_job', 'void_doc',
   ].sort());
 });

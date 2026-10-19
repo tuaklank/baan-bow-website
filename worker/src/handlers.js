@@ -1,12 +1,18 @@
 // คำสั่งทั้งหมดที่รับจาก LINE — ฟังก์ชันนี้คืน "ข้อความที่จะตอบ" (null = ไม่ตอบ)
-import { TYPES, SELLERS, JOB_STATUSES, JOB_DEFAULT_DUE_DAYS, WHT_ALLOWED_BP, getSeller, sellerCanIssue } from './config.js';
-import { compute } from './money.js';
+import {
+  TYPES, SELLERS, JOB_STATUSES, JOB_DEFAULT_DUE_DAYS, WHT_ALLOWED_BP,
+  STOCK_ALLOW_NEGATIVE, EXPENSE_CATEGORIES, getSeller, sellerCanIssue,
+} from './config.js';
+import { compute, toSatang } from './money.js';
 import { parseDocNo } from './numbering.js';
 import { parseCommand } from './ai.js';
 import {
   findCustomer, mergeCustomer, issueDocument, docByNo, voidDocument, searchDocs, monthSummary,
   createJob, jobById, jobByDocNo, findJobs, updateJob, addJobEvent, openJobs,
   savePending, takePending, clearPending, addHoliday, holidayOn,
+  findProduct, productKey, receiveStock, listStock, stockOf,
+  addStockMove, stockMovesOfJob, productsByKeys, stockValue,
+  addExpense, monthExpenses,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
 import { todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, thaiDate, thaiMonth, fmtBaht } from './thai.js';
@@ -29,10 +35,21 @@ export const HELP = `คำสั่งที่ใช้ได้
 • งาน 3 กำลังทำ / งาน 3 เสร็จแล้ว
 • งานค้าง
 
+📦 สต๊อก (นับเป็นชิ้น)
+• รับเข้า โบว์ริบบิ้นแดง 3        (ใส่ต้นทุนก็ได้ — ... 3 ต้นทุน 45)
+• สต๊อก   หรือ   สต๊อก โบว์แดง
+• ส่งของงาน 7                   (ตัดสต๊อกตามรายการในบิลของงานนั้น)
+• ปรับสต๊อก โบว์แดง = 12         (ตั้งยอดตามที่นับได้จริง)
+
+💸 รายจ่าย
+• ค่าวัสดุ 450 ซื้อริบบิ้น
+• ค่าส่ง 60 Kerry   /   ค่าแรง 300 พี่หน่อย   /   ค่าเช่า 3500
+
 📅 วันหยุด
 • เพิ่มวันหยุด 31 ธันวาคม สิ้นปี
 
-ทุกเอกสารต้องพิมพ์ "ยืนยัน" ก่อนจึงออกเลขที่จริง`;
+ทุกเอกสารต้องพิมพ์ "ยืนยัน" ก่อนจึงออกเลขที่จริง
+ส่งของก็ต้องยืนยันเหมือนกัน เพราะตัดสต๊อกแล้วย้อนไม่ได้`;
 
 // ---------- ตัวช่วย ----------
 
@@ -229,6 +246,26 @@ async function doVoidDoc(env, uid, cmd) {
     + 'เอกสารจะถูกประทับลายน้ำ "ยกเลิก" และเลขที่นี้จะใช้ซ้ำไม่ได้\nพิมพ์ "ยืนยัน" เพื่อยกเลิกเอกสาร';
 }
 
+/**
+ * หางานจากเลขงาน ("7" "#7" "งาน 7") หรือจากชื่องาน
+ * คืน { job } หรือ { error } ที่ตอบกลับได้เลย — ชื่อซ้ำหลายงานถือว่าหาไม่เจอ ไม่เดาให้
+ */
+async function resolveJob(db, ref) {
+  const t = String(ref).trim().replace(/^(#|งาน|JOB)[\s-]*/i, '');
+  const found = /^\d+$/.test(t)
+    ? await jobById(db, Number(t)).then((one) => (one ? [one] : []))
+    : await findJobs(db, ref);
+
+  if (!found.length) return { error: 'ไม่พบงานที่ตรงกับ ' + ref };
+  if (found.length > 1) {
+    return {
+      error: 'พบหลายงาน ระบุเลขงานครับ:\n'
+        + found.map((x) => `#${x.id} ${x.title} [${x.status}]`).join('\n'),
+    };
+  }
+  return { job: found[0] };
+}
+
 /** ไม่ได้บอกกำหนดส่งมา ตั้งให้เป็นอีก 4 วันนับจากวันเปิดงาน */
 const defaultDue = (ymd) => addDays(ymd, JOB_DEFAULT_DUE_DAYS);
 
@@ -297,20 +334,9 @@ async function doUpdateJob(env, cmd) {
   const j = cmd.job || {};
   if (!j.ref) return 'ระบุเลขงานหรือชื่องานด้วยครับ เช่น "งาน 3 เสร็จแล้ว"';
 
-  const m = String(j.ref).match(/^#?(\d+)$/);
-  let found;
-  if (m) {
-    const one = await jobById(db, Number(m[1]));
-    found = one ? [one] : [];
-  } else {
-    found = await findJobs(db, j.ref);
-  }
-  if (!found.length) return 'ไม่พบงานที่ตรงกับ ' + j.ref;
-  if (found.length > 1) {
-    return 'พบหลายงาน ระบุเลขงานครับ:\n' + found.map((x) => `#${x.id} ${x.title} [${x.status}]`).join('\n');
-  }
-
-  const job = found[0];
+  const r = await resolveJob(db, j.ref);
+  if (r.error) return r.error;
+  const job = r.job;
   if (j.status && !JOB_STATUSES.includes(j.status)) return 'สถานะใช้ได้เฉพาะ: ' + JOB_STATUSES.join(', ');
   const due = isValidYmd(j.due_date) ? j.due_date : null;
   const updated = await updateJob(db, job.id, { status: j.status ?? null, due_date: due, note: j.note ?? null });
@@ -343,7 +369,9 @@ async function doSearch(env, cmd) {
 async function doMonthSummary(env) {
   const ym = monthBkk();
   const s = await monthSummary(env.DB, ym);
-  if (!s.byType.length) return `${thaiMonth(ym)} ยังไม่มีเอกสารที่ออกครับ`;
+  const exp = await monthExpenses(env.DB, ym);
+  if (!s.byType.length && !exp.length) return `${thaiMonth(ym)} ยังไม่มีเอกสารและรายจ่ายครับ`;
+  if (!s.byType.length) return expenseOnlySummary(ym, exp);
 
   // แยกตามบริษัท เพราะคนละนิติบุคคล ยื่น VAT คนละชุด เอายอดมารวมกันไม่ได้
   const bySeller = new Map();
@@ -366,14 +394,61 @@ async function doMonthSummary(env) {
   const today = todayBkk();
   const late = open.filter((j) => j.due_date && j.due_date < today).length;
 
+  const income = s.byType.reduce((a, r) => a + r.total, 0);
+  const spent = exp.reduce((a, r) => a + r.total, 0);
+
   return [
     `📊 สรุป ${thaiMonth(ym)}`,
     '',
     blocks.join('\n\n'),
     s.voidCount ? `\nยกเลิก ${s.voidCount} ใบ (ไม่นับในยอด)` : null,
+    exp.length ? '\n' + expenseBlock(exp) : null,
+    '',
+    `━ รายรับ ${fmtBaht(income)} − รายจ่าย ${fmtBaht(spent)}`,
+    `เหลือ ${fmtBaht(income - spent)} บาท`,
+    exp.length ? '' : '(ยังไม่ได้บันทึกรายจ่ายเดือนนี้)',
     '',
     `งานค้าง ${open.length} งาน${late ? ` (เลยกำหนด ${late})` : ''}`,
   ].filter((x) => x !== null).join('\n');
+}
+
+/**
+ * รายจ่ายของเดือน แยกหมวด และบอกยอดต่อบริษัทเฉพาะตอนที่จ่ายจากทั้งสองบริษัท
+ * เพราะส่วนใหญ่จ่ายจากบริษัทเดียว ถ้าแยกทุกครั้งข้อความจะยาวเกินจำเป็น
+ */
+function expenseBlock(rows) {
+  const byCat = new Map();
+  for (const r of rows) {
+    const cur = byCat.get(r.category) ?? { cnt: 0, total: 0 };
+    byCat.set(r.category, { cnt: cur.cnt + r.cnt, total: cur.total + r.total });
+  }
+  const sellers = [...new Set(rows.map((r) => r.seller))];
+  const total = rows.reduce((a, r) => a + r.total, 0);
+
+  return [
+    '━ รายจ่าย',
+    ...EXPENSE_CATEGORIES.filter((c) => byCat.has(c))
+      .map((c) => `• ${c} ${byCat.get(c).cnt} รายการ — ${fmtBaht(byCat.get(c).total)} บาท`),
+    `รวม ${fmtBaht(total)} บาท`,
+    ...(sellers.length > 1
+      ? sellers.map((k) => {
+        const sum = rows.filter((r) => r.seller === k).reduce((a, r) => a + r.total, 0);
+        return `  จ่ายในนาม ${getSeller(k).label} ${fmtBaht(sum)} บาท`;
+      })
+      : []),
+  ].join('\n');
+}
+
+/** เดือนที่มีแต่รายจ่าย ยังไม่ได้ออกเอกสารเลย */
+function expenseOnlySummary(ym, exp) {
+  const spent = exp.reduce((a, r) => a + r.total, 0);
+  return [
+    `📊 สรุป ${thaiMonth(ym)}`,
+    '',
+    expenseBlock(exp),
+    '',
+    `ยังไม่ได้ออกเอกสารเดือนนี้ — ติดลบอยู่ ${fmtBaht(spent)} บาท`,
+  ].join('\n');
 }
 
 async function doAddHoliday(env, cmd) {
@@ -381,6 +456,183 @@ async function doAddHoliday(env, cmd) {
   if (!isValidYmd(h.date)) return 'ระบุวันที่ให้ชัดครับ เช่น "เพิ่มวันหยุด 31 ธันวาคม สิ้นปี"';
   await addHoliday(env.DB, h.date, h.name || 'วันหยุด');
   return `เพิ่มวันหยุด ${thaiDate(h.date, true)} — ${h.name || 'วันหยุด'}`;
+}
+
+// ---------- สต๊อก ----------
+
+async function doReceiveStock(env, cmd) {
+  const db = env.DB;
+  const st = cmd.stock || {};
+  if (!st.name) return 'ระบุชื่อโบว์ด้วยครับ เช่น "รับเข้า โบว์ริบบิ้นแดง 3"';
+  if (!st.qty || st.qty <= 0) return `รับเข้า ${st.name} กี่ชิ้นครับ เช่น "รับเข้า ${st.name} 3"`;
+
+  // เคยมีรายการนี้แล้วหรือยัง — เช็คก่อนรับเข้า เพราะ receiveStock จะสร้างให้ถ้าไม่มี
+  const existed = await findProduct(db, st.name);
+  const cost = st.unit_cost ? toSatang(st.unit_cost) : null;
+  const { product, after } = await receiveStock(db, {
+    name: st.name, qty: st.qty, unit_cost: cost, note: st.note ?? null,
+  });
+
+  return `📦 รับเข้า ${product.name} +${st.qty} ${product.unit}\n`
+    + `คงเหลือ ${after.qty} ${product.unit}`
+    + (cost ? `\nต้นทุน ${fmtBaht(cost)} บาท/${product.unit}` : '')
+    + (existed ? '' : '\n\n(ยังไม่มีรายการนี้ ตั้งให้ในสต๊อกแล้ว)');
+}
+
+async function doListStock(env, cmd) {
+  const db = env.DB;
+  const name = cmd.stock?.name || cmd.query;
+
+  if (name) {
+    const p = await findProduct(db, name);
+    if (!p) {
+      return `ไม่มี "${name}" ในสต๊อกครับ\n`
+        + `รับเข้าครั้งแรกจะตั้งรายการให้เอง เช่น "รับเข้า ${name} 3"`;
+    }
+    const s = await stockOf(db, p.id);
+    return `📦 ${s.name}\nคงเหลือ ${s.qty} ${s.unit}`
+      + (s.cost != null ? `\nต้นทุน ${fmtBaht(s.cost)} บาท/${s.unit}` : '')
+      + (s.qty < 0 ? '\n\n⚠️ ยอดติดลบ — ของเข้ายังไม่ได้ลงหรือเปล่าครับ' : '');
+  }
+
+  const rows = await listStock(db);
+  if (!rows.length) {
+    return 'ยังไม่มีรายการในสต๊อกครับ\n"รับเข้า โบว์ริบบิ้นแดง 3" จะตั้งรายการให้เอง';
+  }
+
+  const v = await stockValue(db);
+  const neg = rows.filter((r) => r.qty < 0);
+  return [
+    `📦 สต๊อก ${rows.length} รายการ`,
+    '',
+    ...rows.map((r) => `${r.qty < 0 ? '⚠️' : '•'} ${r.name} — ${r.qty} ${r.unit}`),
+    '',
+    v?.value ? `มูลค่าตามต้นทุน ${fmtBaht(v.value)} บาท` : null,
+    v?.unpriced ? `(ยังไม่ได้ใส่ต้นทุน ${v.unpriced} รายการ จึงไม่ได้นับในมูลค่า)` : null,
+    neg.length ? `\n⚠️ ติดลบ ${neg.length} รายการ — รับเข้าย้อนหลังหรือปรับยอดได้ครับ` : null,
+  ].filter((x) => x !== null).join('\n');
+}
+
+/** ปรับยอดต้องยืนยัน เพราะเป็นการทับยอดเดิม และกันกรณี AI อ่านจำนวนไม่ออกแล้วได้ 0 */
+async function doCountStock(env, uid, cmd) {
+  const db = env.DB;
+  const st = cmd.stock || {};
+  if (!st.name) return 'ระบุชื่อโบว์ด้วยครับ เช่น "ปรับสต๊อก โบว์แดง = 12"';
+
+  const p = await findProduct(db, st.name);
+  if (!p) {
+    return `ไม่มี "${st.name}" ในสต๊อกครับ\n`
+      + `ถ้าเป็นของใหม่ ใช้ "รับเข้า ${st.name} ${st.qty || 1}" แทน`;
+  }
+  const cur = await stockOf(db, p.id);
+  if (cur.qty === st.qty) return `${p.name} มี ${cur.qty} ${p.unit} ตรงกับที่นับได้อยู่แล้ว ไม่ต้องปรับครับ`;
+
+  await savePending(db, uid, { kind: 'count', product_id: p.id, qty: st.qty, note: st.note ?? null });
+  const delta = st.qty - cur.qty;
+  return `จะตั้งยอด ${p.name} เป็น ${st.qty} ${p.unit}\n`
+    + `ระบบมีอยู่ ${cur.qty} ${p.unit} จะลงส่วนต่าง ${delta > 0 ? '+' : ''}${delta}\n\n`
+    + 'ยอดเดิมไม่ได้ถูกลบ ลงเป็นแถว "ปรับยอด" ในสมุดเดินของ\nพิมพ์ "ยืนยัน" เพื่อปรับยอด';
+}
+
+/**
+ * ตัดสต๊อกตอนส่งของ — อ่านรายการจากบิลของงานนั้น จับคู่ชื่อกับสินค้าในสต๊อก
+ * จับคู่ไม่ได้จะบอกว่าตัวไหนไม่ได้ตัด ไม่เดาและไม่ตัดมั่ว
+ */
+async function doShipJob(env, uid, cmd) {
+  const db = env.DB;
+  const ref = cmd.job?.ref || cmd.query || cmd.doc_no;
+  if (!ref) return 'ระบุเลขงานด้วยครับ เช่น "ส่งของงาน 7"';
+
+  const r = await resolveJob(db, ref);
+  if (r.error) return r.error;
+  const job = r.job;
+
+  const done = await stockMovesOfJob(db, job.id);
+  if (done.length) {
+    return `งาน #${job.id} ${job.title} ตัดสต๊อกไปแล้ว ${done.length} รายการ `
+      + `(${thaiDate(String(done[0].at).slice(0, 10))})\n\n`
+      + 'ส่งของเพิ่มอีกรอบให้ปรับยอดแทน เช่น "ปรับสต๊อก โบว์แดง = 10"';
+  }
+
+  if (!job.doc_no) {
+    return `งาน #${job.id} ไม่ได้ผูกกับเอกสาร จึงไม่รู้ว่าส่งอะไรไปเท่าไรครับ\n\n`
+      + 'ตัดสต๊อกเองได้ด้วย "ปรับสต๊อก <ชื่อโบว์> = <จำนวนที่เหลือ>"';
+  }
+  const doc = await docByNo(db, job.doc_no);
+  if (!doc) return `ไม่พบเอกสาร ${job.doc_no} ที่งาน #${job.id} อ้างอยู่`;
+
+  const items = JSON.parse(doc.items);
+  const products = await productsByKeys(db, [...new Set(items.map((i) => productKey(i.name)))]);
+  const byKey = new Map(products.map((p) => [p.name_key, p]));
+
+  const lines = [];
+  const unmatched = [];
+  for (const i of items) {
+    const p = byKey.get(productKey(i.name));
+    if (p) lines.push({ product_id: p.id, name: p.name, unit: p.unit, qty: Math.max(1, Math.round(i.qty)) });
+    else unmatched.push(`${i.name} × ${i.qty}`);
+  }
+
+  const notCut = unmatched.length
+    ? '\n\nไม่มีในสต๊อก จึงไม่ตัด:\n' + unmatched.map((x) => '• ' + x).join('\n')
+    : '';
+
+  if (!lines.length) {
+    return `รายการในบิล ${doc.doc_no} ยังไม่มีในสต๊อกเลยครับ\n\n`
+      + unmatched.map((x) => '• ' + x).join('\n')
+      + `\n\nรับเข้าก่อนค่อยส่งของ เช่น "รับเข้า ${items[0].name} ${Math.round(items[0].qty)}"`;
+  }
+
+  // ยอดคงเหลือตอนนี้ เอาไว้เตือนว่าตัดแล้วจะติดลบ
+  const withHave = [];
+  for (const l of lines) withHave.push({ ...l, have: (await stockOf(db, l.product_id)).qty });
+  const neg = withHave.filter((l) => l.have - l.qty < 0);
+
+  if (neg.length && !STOCK_ALLOW_NEGATIVE) {
+    return 'สต๊อกไม่พอครับ\n' + neg.map((l) => `• ${l.name} ต้องใช้ ${l.qty} มี ${l.have}`).join('\n');
+  }
+
+  await savePending(db, uid, {
+    kind: 'ship', job_id: job.id, doc_no: doc.doc_no, lines: withHave, unmatched,
+  });
+
+  return `จะตัดสต๊อกของงาน #${job.id} ${job.title}\nตามบิล ${doc.doc_no}\n\n`
+    + withHave.map((l) => `• ${l.name} −${l.qty} (${l.have} → ${l.have - l.qty})`).join('\n')
+    + notCut
+    + (neg.length ? `\n\n⚠️ ${neg.length} รายการจะติดลบ — ของเข้ายังไม่ได้ลงหรือเปล่าครับ` : '')
+    + '\n\nพิมพ์ "ยืนยัน" เพื่อตัดสต๊อก';
+}
+
+// ---------- รายจ่าย ----------
+
+async function doAddExpense(env, cmd) {
+  const db = env.DB;
+  const e = cmd.expense || {};
+  if (!e.amount || e.amount <= 0) return 'ยอดเท่าไรครับ เช่น "ค่าวัสดุ 450 ซื้อริบบิ้น"';
+
+  // หมวดที่อ่านไม่เข้าข้อไหนเข้า "อื่นๆ" ไม่ทิ้งรายการ แล้วบอกให้รู้ว่าเข้าหมวดไหนไป
+  const category = EXPENSE_CATEGORIES.includes(e.category) ? e.category : 'อื่นๆ';
+  const spent_date = isValidYmd(e.spent_date) ? e.spent_date : todayBkk();
+
+  let job = null;
+  if (cmd.job?.ref) {
+    const r = await resolveJob(db, cmd.job.ref);
+    if (r.error) return r.error;
+    job = r.job;
+  }
+
+  const amount = toSatang(e.amount);
+  const row = await addExpense(db, {
+    spent_date, category, amount,
+    note: e.note ?? null,
+    job_id: job?.id ?? null,
+    seller: cmd.seller ? getSeller(cmd.seller).key : null,
+  });
+
+  return `💸 บันทึก${category} ${fmtBaht(amount)} บาท\n`
+    + `${thaiDate(spent_date, true)}${e.note ? ' · ' + e.note : ''}\n`
+    + (job ? `งาน #${job.id} ${job.title}\n` : '')
+    + `ในนาม ${getSeller(row.seller).label} · รายการที่ ${row.id}`;
 }
 
 // ---------- ยืนยัน ----------
@@ -396,6 +648,34 @@ async function doConfirm(env, uid) {
   }
 
   if (p.kind === 'need_vat') return 'ยังไม่ได้ตอบเรื่อง VAT ครับ — ' + askVat(TYPES[p.base.type].tax);
+
+  if (p.kind === 'ship') {
+    const after = [];
+    for (const l of p.lines) {
+      const s = await addStockMove(db, {
+        product_id: l.product_id, delta: -l.qty, reason: 'ส่งของ',
+        job_id: p.job_id, doc_no: p.doc_no,
+      });
+      after.push({ ...l, left: s.qty });
+    }
+    await addJobEvent(db, p.job_id, `ส่งของ ตัดสต๊อก ${after.length} รายการ`);
+    const neg = after.filter((l) => l.left < 0);
+    return `🚚 ตัดสต๊อกงาน #${p.job_id} แล้ว\n\n`
+      + after.map((l) => `• ${l.name} −${l.qty} เหลือ ${l.left} ${l.unit}`).join('\n')
+      + (neg.length ? `\n\n⚠️ ติดลบ ${neg.length} รายการ — รับเข้าย้อนหลังได้ครับ` : '')
+      + `\n\nงานนี้เสร็จแล้วพิมพ์ปิดได้เลย — "งาน ${p.job_id} เสร็จแล้ว"`;
+  }
+
+  if (p.kind === 'count') {
+    // อ่านยอดใหม่ตอนยืนยัน ไม่ใช้ยอดตอนขอ เพราะอาจมีรายการเข้ามาระหว่างนั้น
+    const before = await stockOf(db, p.product_id);
+    if (before.qty === p.qty) return `${before.name} มี ${before.qty} ${before.unit} ตรงอยู่แล้ว ไม่ต้องปรับครับ`;
+    const s = await addStockMove(db, {
+      product_id: p.product_id, delta: p.qty - before.qty, reason: 'ปรับยอด',
+      note: p.note ?? `นับได้ ${p.qty} จากที่ระบบมี ${before.qty}`,
+    });
+    return `📦 ปรับยอด ${s.name} เป็น ${s.qty} ${s.unit} แล้ว\n(จากเดิม ${before.qty})`;
+  }
 
   if (p.kind === 'doc') {
     const row = await issueDocument(db, p.doc);
@@ -463,6 +743,11 @@ export async function handleText(env, uid, text) {
     case 'convert_doc':   return doConvertDoc(env, uid, cmd);
     case 'void_doc':      return doVoidDoc(env, uid, cmd);
     case 'create_job':    return doCreateJob(env, cmd);
+    case 'receive_stock': return doReceiveStock(env, cmd);
+    case 'list_stock':    return doListStock(env, cmd);
+    case 'count_stock':   return doCountStock(env, uid, cmd);
+    case 'ship_job':      return doShipJob(env, uid, cmd);
+    case 'add_expense':   return doAddExpense(env, cmd);
     case 'job_from_doc':  return doJobFromDoc(env, cmd);
     case 'update_job':    return doUpdateJob(env, cmd);
     case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `🛠 งานค้าง (${thaiDate(todayBkk(), true)})`);

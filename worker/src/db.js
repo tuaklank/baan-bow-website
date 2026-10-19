@@ -198,3 +198,142 @@ export const addHoliday = (db, date, name) =>
 
 export const holidayOn = (db, date) =>
   db.prepare('SELECT name FROM holidays WHERE date = ?').bind(date).first();
+
+// ---------- สต๊อก ----------
+/** ตัดช่องว่างและตัวพิมพ์ใหญ่เล็ก เพื่อจับคู่สินค้าเดิมให้เจอ (ไม่ตัดคำนำหน้าเหมือนชื่อคน) */
+export function productKey(name) {
+  return String(name || '').trim().replace(/\s+/g, '').toLowerCase();
+}
+
+export const findProduct = (db, name) =>
+  db.prepare('SELECT * FROM products WHERE name_key = ?').bind(productKey(name)).first();
+
+/** บันทึกสินค้า: ช่องที่ส่งมาใหม่เขียนทับ ช่องที่เป็น null เก็บของเดิมไว้ (เหมือน upsertCustomer) */
+export async function upsertProduct(db, p) {
+  const key = productKey(p.name);
+  await db.prepare(`
+    INSERT INTO products (name, name_key, unit, cost, price, note)
+    VALUES (?, ?, COALESCE(?, 'ชิ้น'), ?, ?, ?)
+    ON CONFLICT(name_key) DO UPDATE SET
+      name       = excluded.name,
+      unit       = COALESCE(excluded.unit,  products.unit),
+      cost       = COALESCE(excluded.cost,  products.cost),
+      price      = COALESCE(excluded.price, products.price),
+      note       = COALESCE(excluded.note,  products.note),
+      active     = 1,
+      updated_at = datetime('now')
+  `).bind(p.name, key, p.unit ?? null, p.cost ?? null, p.price ?? null, p.note ?? null).run();
+  return db.prepare('SELECT * FROM products WHERE name_key = ?').bind(key).first();
+}
+
+/**
+ * ยอดคงเหลือทุกตัว — คิดจาก SUM(delta) ในสมุดเดินของ ไม่ได้อ่านจากช่องที่เก็บยอดไว้
+ * ช้ากว่าเล็กน้อยแต่ยอดไม่เคยเพี้ยน และย้อนดูได้ว่าของหายตอนไหน
+ */
+export async function listStock(db, { withZero = true } = {}) {
+  const { results } = await db.prepare(`
+    SELECT p.*, COALESCE(SUM(m.delta), 0) AS qty
+    FROM products p LEFT JOIN stock_moves m ON m.product_id = p.id
+    GROUP BY p.id
+    ${withZero ? '' : 'HAVING qty <> 0'}
+    ORDER BY p.active DESC, qty <= 0, p.name
+  `).all();
+  return results;
+}
+
+export const stockOf = (db, productId) =>
+  db.prepare(`
+    SELECT p.*, COALESCE(SUM(m.delta), 0) AS qty
+    FROM products p LEFT JOIN stock_moves m ON m.product_id = p.id
+    WHERE p.id = ? GROUP BY p.id
+  `).bind(productId).first();
+
+export async function addStockMove(db, m) {
+  await db.prepare(`
+    INSERT INTO stock_moves (product_id, delta, reason, unit_cost, job_id, doc_no, note)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(
+    m.product_id, m.delta, m.reason,
+    m.unit_cost ?? null, m.job_id ?? null, m.doc_no ?? null, m.note ?? null,
+  ).run();
+  return stockOf(db, m.product_id);
+}
+
+/** รับของเข้า: ไม่มีสินค้าตัวนี้ในระบบก็สร้างให้เลย ไม่ต้องตั้งรายการไว้ก่อน */
+export async function receiveStock(db, { name, qty, unit_cost, note }) {
+  const p = await upsertProduct(db, { name, cost: unit_cost ?? null });
+  return { product: p, after: await addStockMove(db, {
+    product_id: p.id, delta: Math.abs(qty), reason: 'รับเข้า', unit_cost: unit_cost ?? null, note,
+  }) };
+}
+
+export async function stockMovesOf(db, productId, limit = 20) {
+  const { results } = await db.prepare(
+    'SELECT * FROM stock_moves WHERE product_id = ? ORDER BY id DESC LIMIT ?',
+  ).bind(productId, limit).all();
+  return results;
+}
+
+/** มูลค่าสต๊อกรวม — เฉพาะตัวที่รู้ต้นทุน ตัวที่ยังไม่เคยใส่ต้นทุนนับเป็นจำนวนชิ้นอย่างเดียว */
+export async function stockValue(db) {
+  return db.prepare(`
+    SELECT
+      SUM(CASE WHEN p.cost IS NOT NULL THEN q.qty * p.cost ELSE 0 END) AS value,
+      SUM(CASE WHEN p.cost IS NULL AND q.qty > 0 THEN 1 ELSE 0 END)   AS unpriced
+    FROM products p
+    JOIN (SELECT product_id, SUM(delta) AS qty FROM stock_moves GROUP BY product_id) q
+      ON q.product_id = p.id
+    WHERE q.qty > 0
+  `).first();
+}
+
+// ---------- รายจ่าย ----------
+export async function addExpense(db, e) {
+  const res = await db.prepare(`
+    INSERT INTO expenses (spent_date, category, amount, note, job_id, seller)
+    VALUES (?,?,?,?,?, COALESCE(?, 'tuaklang'))
+  `).bind(e.spent_date, e.category, e.amount, e.note ?? null, e.job_id ?? null, e.seller ?? null).run();
+  return db.prepare('SELECT * FROM expenses WHERE id = ?').bind(res.meta.last_row_id).first();
+}
+
+export async function recentExpenses(db, limit = 50) {
+  const { results } = await db.prepare(
+    'SELECT * FROM expenses ORDER BY spent_date DESC, id DESC LIMIT ?',
+  ).bind(limit).all();
+  return results;
+}
+
+/** รายจ่ายของเดือน (YYYY-MM) แยกหมวดและแยกบริษัท — คู่กับ monthSummary ที่เป็นฝั่งรายรับ */
+export async function monthExpenses(db, ym) {
+  const { results } = await db.prepare(`
+    SELECT seller, category, COUNT(*) AS cnt, SUM(amount) AS total
+    FROM expenses WHERE spent_date LIKE ?
+    GROUP BY seller, category
+  `).bind(ym + '%').all();
+  return results;
+}
+
+export async function jobExpenses(db, jobId) {
+  const { results } = await db.prepare(
+    'SELECT * FROM expenses WHERE job_id = ? ORDER BY id DESC',
+  ).bind(jobId).all();
+  return results;
+}
+
+/** ตัดสต๊อกของงานนี้ไปแล้วหรือยัง — กันกดส่งของซ้ำแล้วสต๊อกหายสองเท่า */
+export async function stockMovesOfJob(db, jobId) {
+  const { results } = await db.prepare(
+    "SELECT * FROM stock_moves WHERE job_id = ? AND reason = 'ส่งของ' ORDER BY id",
+  ).bind(jobId).all();
+  return results;
+}
+
+/** จับคู่ชื่อรายการในเอกสารกับสินค้าในสต๊อก — คืนเฉพาะตัวที่เจอ */
+export async function productsByKeys(db, keys) {
+  if (!keys.length) return [];
+  const qs = keys.map(() => '?').join(',');
+  const { results } = await db.prepare(
+    `SELECT * FROM products WHERE name_key IN (${qs})`,
+  ).bind(...keys).all();
+  return results;
+}
