@@ -31,10 +31,7 @@
 </header>
 
 <section class="hero">
-  <video class="hero-video" poster="assets/hero-poster.jpg" preload="metadata" autoplay muted loop playsinline>
-    <source src="assets/hero-drone.webm" type="video/webm">
-    <source src="assets/hero-drone.mp4" type="video/mp4">
-  </video>
+  <video class="hero-video" src="assets/hero-drone.mp4" autoplay muted loop playsinline preload="auto"></video>
   <div class="hero-scrim hero-scrim-v"></div>
   <div class="hero-scrim hero-scrim-h"></div>
   <div class="wrap hero-content">
@@ -383,19 +380,6 @@
 </footer>
 
 <script>
-  // hero video plays slowed down: the clean window of the source footage is
-  // only 1.4s, so the ping-pong loop is short. HERO_RATE stretches it.
-  // Set on loadedmetadata and again on canplay -- some browsers reset
-  // playbackRate when a looping video wraps.
-  const HERO_RATE = 0.5;
-  (function(){
-    const v = document.querySelector('.hero-video');
-    if(!v) return;
-    const rate = ()=>{ if(v.playbackRate !== HERO_RATE) v.playbackRate = HERO_RATE; };
-    rate();
-    ['loadedmetadata','canplay','play','seeked','timeupdate'].forEach(e=>v.addEventListener(e, rate));
-  })();
-
   // mobile menu toggle
   const toggle = document.getElementById('menuToggle');
   const navLinks = document.querySelector('nav.links');
