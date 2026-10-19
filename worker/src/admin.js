@@ -1,6 +1,6 @@
 // หน้าหลังบ้านสำหรับมือถือ — 5 แท็บ งาน / เอกสาร / สต๊อก / รายจ่าย / สรุป
 // ไม่มีระบบ login ในนี้ ตั้งใจให้ Cloudflare Access กั้นหน้า /admin จากข้างนอก
-import { TYPES, EXPENSE_CATEGORIES, getSeller } from './config.js';
+import { TYPES, EXPENSE_CATEGORIES, getSeller, splitIncome, roleOf } from './config.js';
 import { thaiDateShort, thaiDate, thaiMonth, thaiMonthShort, fmtBaht } from './thai.js';
 import { esc } from './render.js';
 import { C, CHART_CSS, monthlyBars, hBars, legend, signed } from './chart.js';
@@ -48,6 +48,8 @@ form.search button{font:600 14px 'Sarabun';border:0;border-radius:10px;padding:1
 .sum div.line{display:flex;justify-content:space-between;gap:12px;padding:9px 14px;border-bottom:1px solid var(--line)}
 .sum div.line:last-child{border-bottom:0}
 .sum .grand{background:var(--wine);color:#fff;font-weight:600}
+.sum .line em{font-style:normal;font-size:11.5px;color:var(--mute)}
+.hero .pend{margin-top:8px;padding-top:7px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mute);line-height:1.6}
 .empty{text-align:center;color:var(--mute);padding:30px 10px;font-size:14px}
 footer{text-align:center;font-size:10px;letter-spacing:2px;color:var(--gold);margin-top:18px;text-transform:uppercase}
 details.nums{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
@@ -163,15 +165,22 @@ function summaryView(s, openCount, lateCount, todayCount, monthExp, stock, trend
 
   const blocks = bySeller.size
     ? [...bySeller.entries()].map(([key, rows]) => {
-      const total = rows.reduce((a, r) => a + r.total, 0);
-      const vat = rows.reduce((a, r) => a + r.vat, 0);
-      const base = rows.reduce((a, r) => a + r.base, 0);
+      // ยอดยื่น VAT นับเฉพาะเอกสารภาษี (TI/RT) ใบเสนอราคาไม่เกี่ยวกับภาษีขาย
+      const taxRows = rows.filter((r) => TYPES[r.type].tax);
+      const vat = taxRows.reduce((a, r) => a + r.vat, 0);
+      const base = taxRows.reduce((a, r) => a + r.base, 0);
+      const paid = splitIncome(rows).paid;
       return `<div class="sum">
   <h2>${esc(getSeller(key).label)} · ${esc(thaiMonth(s.month))}</h2>
-  ${rows.map((r) => `<div class="line"><span>${esc(TYPES[r.type].th)} · ${r.cnt} ใบ</span><b>${fmtBaht(r.total)}</b></div>`).join('')}
-  <div class="line"><span>มูลค่าก่อนภาษี</span><b>${fmtBaht(base)}</b></div>
-  <div class="line"><span>VAT ขาย (7%)</span><b>${fmtBaht(vat)}</b></div>
-  <div class="line grand"><span>รวม</span><b>${fmtBaht(total)}</b></div>
+  ${rows.map((r) => {
+    // บอกข้างบรรทัดว่าใบไหนนับเป็นรายรับแล้ว ไม่งั้นคนอ่านจะบวกเองแล้วได้คนละยอดกับหัวหน้าจอ
+    const role = roleOf(r.type);
+    const tag = role === 'paid' ? '' : role === 'due' ? ' <em>ค้างรับ</em>' : ' <em>ยังไม่นับเป็นรายรับ</em>';
+    return `<div class="line"><span>${esc(TYPES[r.type].th)} · ${r.cnt} ใบ${tag}</span><b>${fmtBaht(r.total)}</b></div>`;
+  }).join('')}
+  ${taxRows.length ? `<div class="line"><span>มูลค่าก่อนภาษี (เฉพาะเอกสารภาษี)</span><b>${fmtBaht(base)}</b></div>
+  <div class="line"><span>VAT ขาย (7%)</span><b>${fmtBaht(vat)}</b></div>` : ''}
+  <div class="line grand"><span>รับเงินแล้ว</span><b>${fmtBaht(paid)}</b></div>
 </div>`;
     }).join('\n')
     : `<div class="sum">
@@ -179,7 +188,9 @@ function summaryView(s, openCount, lateCount, todayCount, monthExp, stock, trend
   <div class="line"><span>ยังไม่มีเอกสารเดือนนี้</span><b>0.00</b></div>
 </div>`;
 
-  const income = s.byType.reduce((a, r) => a + r.total, 0);
+  // รายรับ = เฉพาะใบที่รับเงินแล้ว ใบเสนอราคาแยกไปอีกกอง ใบกำกับภาษีเป็นค้างรับ
+  const split = splitIncome(s.byType);
+  const income = split.paid;
   const spent = (monthExp || []).reduce((a, r) => a + r.total, 0);
   const left = income - spent;
 
@@ -194,6 +205,10 @@ function summaryView(s, openCount, lateCount, todayCount, monthExp, stock, trend
     <span><i style="background:${C.income}"></i>รายรับ <b>${fmtBaht(income)}</b></span>
     <span><i style="background:${C.spend}"></i>รายจ่าย <b>${fmtBaht(spent)}</b></span>
   </div>
+  ${split.due || split.quote ? `<div class="pend">${[
+    split.due ? `ค้างรับ ${fmtBaht(split.due)} (ใบกำกับภาษี ${split.dueCount} ใบ)` : null,
+    split.quote ? `เสนอราคาไป ${fmtBaht(split.quote)} (${split.quoteCount} ใบ ยังไม่นับเป็นรายรับ)` : null,
+  ].filter(Boolean).join('<br>')}</div>` : ''}
 </div>`;
 
   const trendPanel = (trend || []).length ? `<div class="panel">
@@ -218,8 +233,10 @@ function summaryView(s, openCount, lateCount, todayCount, monthExp, stock, trend
   ${expRows.length ? hBars(expRows, C.spend) : '<p class="empty">ยังไม่ได้บันทึกรายจ่ายเดือนนี้</p>'}
 </div>`;
 
+  // แท่งนี้ต้องเป็นรายรับจริงเหมือนตัวเลขนำ ไม่งั้นสองที่ในหน้าเดียวกันจะไม่ตรงกัน
   const sellerRows = [...bySeller.entries()]
-    .map(([key, rows]) => ({ label: getSeller(key).label, value: rows.reduce((a, r) => a + r.total, 0) }))
+    .map(([key, rows]) => ({ label: getSeller(key).label, value: splitIncome(rows).paid }))
+    .filter((r) => r.value > 0)
     .sort((a, b) => b.value - a.value);
 
   const sellerPanel = sellerRows.length ? `<div class="panel">

@@ -2,6 +2,7 @@
 import {
   TYPES, SELLERS, JOB_STATUSES, JOB_DEFAULT_DUE_DAYS, WHT_ALLOWED_BP,
   STOCK_ALLOW_NEGATIVE, EXPENSE_CATEGORIES, getSeller, sellerCanIssue,
+  splitIncome, roleOf,
 } from './config.js';
 import { compute, toSatang } from './money.js';
 import { parseDocNo } from './numbering.js';
@@ -384,12 +385,17 @@ async function doMonthSummary(env) {
   }
 
   const blocks = [...bySeller.entries()].map(([key, rows]) => {
-    const total = rows.reduce((a, r) => a + r.total, 0);
-    const vat = rows.reduce((a, r) => a + r.vat, 0);
+    const paid = splitIncome(rows).paid;
+    const vat = rows.filter((r) => TYPES[r.type].tax).reduce((a, r) => a + r.vat, 0);
     return [
       `━ ${getSeller(key).label}`,
-      ...rows.map((r) => `• ${TYPES[r.type].th} ${r.cnt} ใบ — ${fmtBaht(r.total)} บาท`),
-      `รวม ${fmtBaht(total)} บาท · VAT ขาย ${fmtBaht(vat)} บาท`,
+      // ต่อท้ายทุกบรรทัดว่าใบนั้นนับเป็นรายรับหรือยัง ไม่งั้นเจ้าของบวกเองแล้วได้คนละยอด
+      ...rows.map((r) => {
+        const role = roleOf(r.type);
+        const tag = role === 'paid' ? '' : role === 'due' ? ' (ค้างรับ)' : ' (ยังไม่นับ)';
+        return `• ${TYPES[r.type].th} ${r.cnt} ใบ — ${fmtBaht(r.total)} บาท${tag}`;
+      }),
+      `รับเงินแล้ว ${fmtBaht(paid)} บาท · VAT ขาย ${fmtBaht(vat)} บาท`,
     ].join('\n');
   });
 
@@ -397,7 +403,9 @@ async function doMonthSummary(env) {
   const today = todayBkk();
   const late = open.filter((j) => j.due_date && j.due_date < today).length;
 
-  const income = s.byType.reduce((a, r) => a + r.total, 0);
+  // รายรับคือเงินที่เข้ามาจริงเท่านั้น ใบเสนอราคาไม่นับ (ดู DOC_ROLE ใน config.js)
+  const split = splitIncome(s.byType);
+  const income = split.paid;
   const spent = exp.reduce((a, r) => a + r.total, 0);
 
   return [
@@ -409,6 +417,8 @@ async function doMonthSummary(env) {
     '',
     `━ รายรับ ${fmtBaht(income)} − รายจ่าย ${fmtBaht(spent)}`,
     `เหลือ ${fmtBaht(income - spent)} บาท`,
+    split.due ? `ค้างรับอีก ${fmtBaht(split.due)} บาท (ใบกำกับภาษี ${split.dueCount} ใบ)` : null,
+    split.quote ? `เสนอราคาไป ${fmtBaht(split.quote)} บาท (${split.quoteCount} ใบ รอลูกค้าตอบ)` : null,
     exp.length ? '' : '(ยังไม่ได้บันทึกรายจ่ายเดือนนี้)',
     '',
     `งานค้าง ${open.length} งาน${late ? ` (เลยกำหนด ${late})` : ''}`,

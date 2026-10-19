@@ -91,15 +91,20 @@ export function hBars(rows, color) {
   if (!rows.length) return '';
   const W = 340, rowH = 30, padL = 0, padR = 4;
   const H = rows.length * rowH + 4;
-  const labelW = 96;
+  const labelW = 112;
   const plotW = W - labelW - padR - 62;
   const max = Math.max(1, ...rows.map((r) => r.value));
+
+  // ชื่อยาวกว่าช่องต้องตัด ไม่ใช่ปล่อยให้ลอดไปใต้แท่ง (ชื่อเต็มอยู่ใน <title> และในตัวเลขข้างๆ)
+  // SVG ไม่มี text-overflow ให้ใช้ จึงตัดตามจำนวนตัวอักษรที่พอดีกับ 112px ที่ 12px
+  const fit = (s) => (String(s).length > 15 ? String(s).slice(0, 14) + '…' : String(s));
 
   const body = rows.map((r, i) => {
     const w = Math.max(2, (r.value / max) * plotW);
     const ty = i * rowH + 4;
-    return `<text x="${padL}" y="${ty + 15}" class="cl">${esc(r.label)}</text>`
-      + bar(labelW, ty + 4, w, 14, color, `${r.label} ${fmtBaht(r.value)} บาท`, true)
+    const full = `${r.label} ${fmtBaht(r.value)} บาท`;
+    return `<text x="${padL}" y="${ty + 15}" class="cl">${esc(fit(r.label))}<title>${esc(full)}</title></text>`
+      + bar(labelW, ty + 4, w, 14, color, full, true)
       + `<text x="${labelW + w + 7}" y="${ty + 15}" class="vl">${esc(fmtBaht(r.value))}</text>`;
   }).join('');
 

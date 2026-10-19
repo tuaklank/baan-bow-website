@@ -1,5 +1,5 @@
 // ตัวช่วยคุย D1 — รวม query ทั้งหมดไว้ที่นี่ ที่อื่นไม่ต้องเขียน SQL
-import { JOB_OPEN_SQL, PENDING_TTL_MS } from './config.js';
+import { JOB_OPEN_SQL, PENDING_TTL_MS, INCOME_TYPE_SQL } from './config.js';
 import { formatDocNo, nextRunningNo, newToken } from './numbering.js';
 
 // ---------- ลูกค้า ----------
@@ -352,9 +352,11 @@ export async function monthExpenses(db, ym) {
  * ง่ายกว่า UNION และอ่านออกว่าเลขไหนมาจากไหน
  */
 export async function monthlyTrend(db, from) {
+  // นับเฉพาะเอกสารที่รับเงินแล้ว ใบเสนอราคาไม่ใช่รายรับ (ดู DOC_ROLE ใน config.js)
   const income = await db.prepare(`
     SELECT substr(issue_date, 1, 7) AS ym, SUM(total) AS total
-    FROM documents WHERE status = 'issued' AND issue_date >= ?
+    FROM documents
+    WHERE status = 'issued' AND type IN (${INCOME_TYPE_SQL}) AND issue_date >= ?
     GROUP BY ym
   `).bind(from + '-01').all();
 

@@ -63,6 +63,43 @@ export const PREFIX_TO_TYPE = Object.fromEntries(
   Object.entries(TYPES).map(([type, t]) => [t.prefix, type]),
 );
 
+/**
+ * เอกสารแต่ละประเภทแปลว่าเงินเข้ามาแล้วหรือยัง — ใช้ตัดสินว่านับเป็นรายรับได้ไหม
+ *   paid  ออกตอนรับเงินแล้ว = รายรับจริง
+ *   due   ออกบิลไปแล้วแต่ยังไม่รู้ว่าเก็บได้ = ค้างรับ
+ *   quote เสนอราคาไป ลูกค้ายังไม่ตอบ = ยังไม่ใช่ยอดขาย
+ *
+ * ห้ามเอา quote ไปรวมเป็นรายรับเด็ดขาด นอกจากจะไม่ใช่เงินแล้ว
+ * ใบเสนอราคาที่ลูกค้าตกลงจะถูกแปลงเป็นใบเสร็จอีกใบ ถ้านับทั้งคู่จะได้ยอดซ้ำสองเท่า
+ */
+export const DOC_ROLE = {
+  quotation:           'quote',
+  receipt:             'paid',
+  tax_invoice:         'due',
+  receipt_tax_invoice: 'paid',
+};
+
+export const roleOf = (type) => DOC_ROLE[type] ?? 'quote';
+export const INCOME_TYPES = Object.keys(DOC_ROLE).filter((t) => DOC_ROLE[t] === 'paid');
+
+/** SQL สำหรับ "เฉพาะเอกสารที่รับเงินแล้ว" — ที่เดียวที่นิยามว่าอะไรคือรายรับ */
+export const INCOME_TYPE_SQL = INCOME_TYPES.map((t) => `'${t}'`).join(',');
+
+/**
+ * แยกยอดรายเดือนเป็น 3 กอง จากผลของ monthSummary
+ * อยู่ที่นี่เพราะทั้งหน้าเว็บและข้อความในไลน์ต้องใช้ตัวเดียวกัน จะได้ไม่มีวันไม่ตรงกัน
+ */
+export function splitIncome(byType) {
+  const out = { paid: 0, due: 0, quote: 0, quoteCount: 0, dueCount: 0 };
+  for (const r of byType || []) {
+    const role = roleOf(r.type);
+    out[role] += r.total;
+    if (role === 'quote') out.quoteCount += r.cnt;
+    if (role === 'due') out.dueCount += r.cnt;
+  }
+  return out;
+}
+
 export const VAT_RATE_BP = 700;   // 7% เป็น basis point
 export const WHT_ALLOWED_BP = [100, 300];  // หัก ณ ที่จ่าย 1% / 3% เท่านั้น
 
