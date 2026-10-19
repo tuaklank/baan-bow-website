@@ -1,6 +1,6 @@
 // หน้าหลังบ้านสำหรับมือถือ — 3 แท็บ งาน / เอกสาร / สรุป
 // ไม่มีระบบ login ในนี้ ตั้งใจให้ Cloudflare Access กั้นหน้า /admin จากข้างนอก
-import { TYPES } from './config.js';
+import { TYPES, getSeller } from './config.js';
 import { thaiDateShort, thaiDate, thaiMonth, fmtBaht } from './thai.js';
 import { esc } from './render.js';
 
@@ -70,31 +70,40 @@ function docCard(d) {
   return `<a class="doc" href="/d/${esc(d.token)}">
   <div class="card${voided ? ' void' : ''}">
     <div class="row"><h3 class="no">${esc(d.doc_no)}</h3><span class="amt">${fmtBaht(d.total)}</span></div>
-    <div class="meta"><span>${esc(TYPES[d.type].th)}</span><span>${esc(c.name)}</span><span>${thaiDateShort(d.issue_date)}</span>${
+    <div class="meta"><span>${esc(TYPES[d.type].th)}</span><span>${esc(c.name)}</span><span>${thaiDateShort(d.issue_date)}</span><span>${esc(getSeller(d.seller).label)}</span>${
     voided ? '<span class="tag late">ยกเลิกแล้ว</span>' : ''
   }</div>
   </div></a>`;
 }
 
 function summaryView(s, openCount, lateCount, todayCount) {
-  const totalAll = s.byType.reduce((a, r) => a + r.total, 0);
-  const vatAll = s.byType.reduce((a, r) => a + r.vat, 0);
-  const typeLines = s.byType.length
-    ? s.byType.map((r) => `<div class="line"><span>${esc(TYPES[r.type].th)} · ${r.cnt} ใบ</span><b>${fmtBaht(r.total)}</b></div>`).join('')
-    : '<div class="line"><span>ยังไม่มีเอกสารเดือนนี้</span><b>0.00</b></div>';
+  // แยกกล่องตามบริษัท — คนละนิติบุคคล ยื่น VAT คนละชุด ห้ามเอายอดมารวมกัน
+  const bySeller = new Map();
+  for (const r of s.byType) {
+    if (!bySeller.has(r.seller)) bySeller.set(r.seller, []);
+    bySeller.get(r.seller).push(r);
+  }
 
-  return `<div class="sum">
+  const blocks = bySeller.size
+    ? [...bySeller.entries()].map(([key, rows]) => {
+      const total = rows.reduce((a, r) => a + r.total, 0);
+      const vat = rows.reduce((a, r) => a + r.vat, 0);
+      const base = rows.reduce((a, r) => a + r.base, 0);
+      return `<div class="sum">
+  <h2>${esc(getSeller(key).label)} · ${esc(thaiMonth(s.month))}</h2>
+  ${rows.map((r) => `<div class="line"><span>${esc(TYPES[r.type].th)} · ${r.cnt} ใบ</span><b>${fmtBaht(r.total)}</b></div>`).join('')}
+  <div class="line"><span>มูลค่าก่อนภาษี</span><b>${fmtBaht(base)}</b></div>
+  <div class="line"><span>VAT ขาย (7%)</span><b>${fmtBaht(vat)}</b></div>
+  <div class="line grand"><span>รวม</span><b>${fmtBaht(total)}</b></div>
+</div>`;
+    }).join('\n')
+    : `<div class="sum">
   <h2>ยอดเดือน ${esc(thaiMonth(s.month))}</h2>
-  ${typeLines}
-  <div class="line grand"><span>รวมทั้งเดือน</span><b>${fmtBaht(totalAll)}</b></div>
-</div>
+  <div class="line"><span>ยังไม่มีเอกสารเดือนนี้</span><b>0.00</b></div>
+</div>`;
 
-<div class="sum">
-  <h2>ภาษี</h2>
-  <div class="line"><span>VAT ขาย (7%)</span><b>${fmtBaht(vatAll)}</b></div>
-  <div class="line"><span>มูลค่าก่อนภาษี</span><b>${fmtBaht(s.byType.reduce((a, r) => a + r.base, 0))}</b></div>
-  ${s.voidCount ? `<div class="line"><span>เอกสารที่ยกเลิก</span><b>${s.voidCount} ใบ</b></div>` : ''}
-</div>
+  return `${blocks}
+${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><span>เอกสารที่ยกเลิก (ไม่นับในยอด)</span><b>${s.voidCount} ใบ</b></div></div>` : ''}
 
 <div class="sum">
   <h2>งาน</h2>

@@ -1,5 +1,5 @@
 // คำสั่งทั้งหมดที่รับจาก LINE — ฟังก์ชันนี้คืน "ข้อความที่จะตอบ" (null = ไม่ตอบ)
-import { TYPES, JOB_STATUSES, WHT_ALLOWED_BP } from './config.js';
+import { TYPES, SELLERS, JOB_STATUSES, WHT_ALLOWED_BP, getSeller, sellerCanIssue } from './config.js';
 import { compute } from './money.js';
 import { parseDocNo } from './numbering.js';
 import { parseCommand } from './ai.js';
@@ -8,7 +8,7 @@ import {
   createJob, jobById, findJobs, updateJob, addJobEvent, openJobs,
   savePending, takePending, clearPending, addHoliday, holidayOn,
 } from './db.js';
-import { readVatMode } from './text.js';
+import { readVatMode, parseTaxId } from './text.js';
 import { todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, thaiDate, thaiMonth, fmtBaht } from './thai.js';
 
 const QT_VALID_DAYS = 30;   // ใบเสนอราคายืนราคา 30 วัน (ตรงกับแม่แบบ)
@@ -42,6 +42,40 @@ const askVat = (tax) => tax
   ? 'เอกสารนี้ต้องมี VAT 7% — ราคาที่แจ้งมา "รวม vat" หรือ "ไม่รวม vat" ครับ'
   : 'ยังไม่ได้ระบุ VAT — ตอบว่า "รวม vat" / "ไม่รวม vat" / "ไม่มี vat" ครับ';
 
+/**
+ * ผู้ขายที่ไม่มีเลขประจำตัวผู้เสียภาษี ออกใบกำกับภาษีไม่ได้ตามกฎหมาย
+ * คืนข้อความอธิบายถ้าออกไม่ได้ คืน null ถ้าออกได้
+ */
+function sellerCannotIssue(seller, type) {
+  if (sellerCanIssue(seller, type)) return null;
+  const other = Object.values(SELLERS).find((s) => s.tax_id);
+  return `${seller.label} ไม่มีเลขประจำตัวผู้เสียภาษี จึงออก${TYPES[type].th}ไม่ได้\n`
+    + (other ? `ถ้าต้องการเอกสารภาษี ให้ออกในนาม ${other.label} แทน (พิมพ์ "ในนาม${other.label}" ต่อท้าย)` : '')
+    + `\nหรือออกเป็นใบเสนอราคา/ใบเสร็จรับเงินในนาม ${seller.label} ได้ตามปกติ`;
+}
+
+/**
+ * ตรวจข้อมูลลูกค้าก่อนออกเอกสาร — คืนข้อความให้ตอบกลับถ้าต้องถามเพิ่ม, null ถ้าผ่าน
+ * แก้ customer.tax_id เป็นรูปแบบมาตรฐานให้ในตัว
+ *
+ * เลขภาษีผิดจำนวนหลัก = หยุดทันที เพราะถ้าปล่อยผ่านจะพิมพ์เลขผิดลงเอกสารภาษี
+ * ใบกำกับภาษีแบบเต็มรูปต้องมีที่อยู่ผู้ซื้อ ขาดไม่ได้
+ */
+export function checkCustomer(customer, type) {
+  const tax = parseTaxId(customer.tax_id);
+  if (!tax.ok) {
+    return `เลขประจำตัวผู้เสียภาษีของลูกค้าไม่ถูกต้อง\n"${customer.tax_id}" นับได้ ${tax.digits.length} หลัก แต่ต้องมี 13 หลัก\n\n`
+      + 'ส่งคำสั่งเดิมมาใหม่พร้อมเลขที่ถูกต้องครับ';
+  }
+  customer.tax_id = tax.formatted;
+
+  if (TYPES[type]?.tax && !customer.address) {
+    return `${TYPES[type].th}แบบเต็มรูปต้องมีที่อยู่ของลูกค้า แต่ไม่พบที่อยู่ในข้อความ\n\n`
+      + 'ส่งคำสั่งเดิมมาใหม่พร้อมที่อยู่เต็มของลูกค้าครับ';
+  }
+  return null;
+}
+
 /** เตือนเมื่อกำหนดส่งตรงวันหยุดหรือเสาร์-อาทิตย์ */
 async function dateWarn(db, ymd) {
   const h = await holidayOn(db, ymd);
@@ -54,8 +88,13 @@ function docSummary(d) {
   const lines = d.lines.map((l) => `• ${l.name} ${l.qty} × ${fmtBaht(l.unit_price)} = ${fmtBaht(l.amount)}`).join('\n');
   const parts = [
     `${TYPES[d.type].th} (ยังไม่ออกเลขที่)`,
+    `ออกในนาม: ${getSeller(d.seller).label}`,
     `ลูกค้า: ${d.customer.name}`,
-    d.customer.tax_id ? `เลขภาษี: ${d.customer.tax_id}${d.customer.branch ? ` (${d.customer.branch})` : ''}` : null,
+    // โชว์ที่อยู่เต็มเสมอ เพื่อให้เห็นก่อนยืนยันว่า AI ดึงมาครบหรือตกหล่น
+    `ที่อยู่: ${d.customer.address || '— ไม่มี —'}`,
+    d.customer.tax_id
+      ? `เลขภาษี: ${d.customer.tax_id}${d.customer.branch ? ` (${d.customer.branch})` : ''}`
+      : (TYPES[d.type].tax ? '⚠️ ไม่มีเลขภาษีลูกค้า' : null),
     `วันที่: ${thaiDate(d.issue_date, true)}`,
     d.ref_doc_no ? `อ้างอิง: ${d.ref_doc_no}` : null,
     '',
@@ -81,10 +120,10 @@ export function jobListText(rows, today, heading) {
 }
 
 /** ประกอบร่างเอกสารจากข้อมูลที่พร้อมแล้ว (คำนวณยอดในโค้ด) */
-function buildDraft({ type, customer, items, discount, vat_mode, wht_rate, note, payment_terms, ref_doc_no, issue_date }) {
+function buildDraft({ type, seller, customer, items, discount, vat_mode, wht_rate, note, payment_terms, ref_doc_no, issue_date }) {
   const c = compute({ items, discount, vat_mode, wht_rate });
   return {
-    type, issue_date, customer,
+    type, seller: getSeller(seller).key, issue_date, customer,
     valid_until: type === 'quotation' ? addDays(issue_date, QT_VALID_DAYS) : null,
     lines: c.lines, discount: c.discount, vat_mode,
     subtotal: c.subtotal, base: c.base, vat: c.vat,
@@ -108,11 +147,18 @@ async function doCreateDoc(env, uid, cmd) {
   const saved = await findCustomer(db, cmd.customer.name);
   const customer = mergeCustomer(cmd.customer, saved);
 
+  const badCustomer = checkCustomer(customer, type);
+  if (badCustomer) return badCustomer;
+
   const wht_rate = cmd.wht_percent ? cmd.wht_percent * 100 : 0;
   if (wht_rate && !WHT_ALLOWED_BP.includes(wht_rate)) return 'หัก ณ ที่จ่าย รับเฉพาะ 1% หรือ 3% ครับ';
 
+  const seller = getSeller(cmd.seller);
+  const blocked = sellerCannotIssue(seller, type);
+  if (blocked) return blocked;
+
   const base = {
-    type, customer, items: cmd.items, discount: cmd.discount || 0, wht_rate,
+    type, seller: seller.key, customer, items: cmd.items, discount: cmd.discount || 0, wht_rate,
     note: cmd.note, payment_terms: cmd.payment_terms, ref_doc_no: null, issue_date: todayBkk(),
   };
 
@@ -136,9 +182,20 @@ async function doConvertDoc(env, uid, cmd) {
   if (src.status === 'void') return `${src.doc_no} ถูกยกเลิกไปแล้ว ออกเอกสารต่อจากใบนี้ไม่ได้`;
   if (!TYPES[cmd.doc_type]) return 'ระบุประเภทเอกสารปลายทางด้วยครับ เช่น "ออกใบกำกับภาษีจาก ' + src.doc_no + '"';
 
+  // ออกในนามเดิมของใบต้นทาง เว้นแต่ผู้ใช้สั่งเปลี่ยนมาในข้อความนี้
+  const seller = getSeller(cmd.seller ?? src.seller);
+  const blocked = sellerCannotIssue(seller, cmd.doc_type);
+  if (blocked) return blocked;
+
+  // เอกสารต้นทางอาจออกตอนที่ยังไม่มีด่านตรวจนี้ จึงตรวจซ้ำก่อนออกใบใหม่
+  const srcCustomer = JSON.parse(src.customer);
+  const badCustomer = checkCustomer(srcCustomer, cmd.doc_type);
+  if (badCustomer) return `${src.doc_no} มีข้อมูลลูกค้าไม่ครบ\n\n` + badCustomer;
+
   const base = {
     type: cmd.doc_type,
-    customer: JSON.parse(src.customer),
+    seller: seller.key,
+    customer: srcCustomer,
     items: JSON.parse(src.items).map((l) => ({ name: l.name, note: l.note, qty: l.qty, unit_price: l.unit_price / 100 })),
     discount: src.discount / 100,
     wht_rate: src.wht_rate,
@@ -236,9 +293,23 @@ async function doMonthSummary(env) {
   const s = await monthSummary(env.DB, ym);
   if (!s.byType.length) return `${thaiMonth(ym)} ยังไม่มีเอกสารที่ออกครับ`;
 
-  const lines = s.byType.map((r) => `• ${TYPES[r.type].th} ${r.cnt} ใบ — ${fmtBaht(r.total)} บาท`);
-  const totalAll = s.byType.reduce((a, r) => a + r.total, 0);
-  const vatAll = s.byType.reduce((a, r) => a + r.vat, 0);
+  // แยกตามบริษัท เพราะคนละนิติบุคคล ยื่น VAT คนละชุด เอายอดมารวมกันไม่ได้
+  const bySeller = new Map();
+  for (const r of s.byType) {
+    if (!bySeller.has(r.seller)) bySeller.set(r.seller, []);
+    bySeller.get(r.seller).push(r);
+  }
+
+  const blocks = [...bySeller.entries()].map(([key, rows]) => {
+    const total = rows.reduce((a, r) => a + r.total, 0);
+    const vat = rows.reduce((a, r) => a + r.vat, 0);
+    return [
+      `━ ${getSeller(key).label}`,
+      ...rows.map((r) => `• ${TYPES[r.type].th} ${r.cnt} ใบ — ${fmtBaht(r.total)} บาท`),
+      `รวม ${fmtBaht(total)} บาท · VAT ขาย ${fmtBaht(vat)} บาท`,
+    ].join('\n');
+  });
+
   const open = await openJobs(env.DB);
   const today = todayBkk();
   const late = open.filter((j) => j.due_date && j.due_date < today).length;
@@ -246,11 +317,8 @@ async function doMonthSummary(env) {
   return [
     `📊 สรุป ${thaiMonth(ym)}`,
     '',
-    ...lines,
-    '',
-    `รวมทั้งเดือน ${fmtBaht(totalAll)} บาท`,
-    `VAT ขาย ${fmtBaht(vatAll)} บาท`,
-    s.voidCount ? `ยกเลิก ${s.voidCount} ใบ` : null,
+    blocks.join('\n\n'),
+    s.voidCount ? `\nยกเลิก ${s.voidCount} ใบ (ไม่นับในยอด)` : null,
     '',
     `งานค้าง ${open.length} งาน${late ? ` (เลยกำหนด ${late})` : ''}`,
   ].filter((x) => x !== null).join('\n');
@@ -298,7 +366,13 @@ export async function handleText(env, uid, text) {
   if (!allowed.length) {
     return `userId ของคุณคือ\n${uid}\n\nนำไปใส่ secret ALLOWED_USER_IDS ด้วยคำสั่ง\nwrangler secret put ALLOWED_USER_IDS`;
   }
-  if (!allowed.includes(uid)) return null;   // คนอื่นสั่งงานไม่ได้ และไม่ตอบอะไรเลย
+  if (!allowed.includes(uid)) {
+    // คนอื่นสั่งงานไม่ได้ และไม่ตอบอะไรเลย — แต่บันทึก userId ไว้ใน log
+    // เพื่อให้เจ้าของเอาไปเพิ่มใน ALLOWED_USER_IDS ได้ถ้าเป็นคนของร้าน
+    // (ดูด้วย wrangler tail) ไม่บันทึกเนื้อข้อความ
+    console.log('ไม่ได้รับอนุญาต userId=' + uid);
+    return null;
+  }
 
   if (msg === 'ยืนยัน') return doConfirm(env, uid);
   if (msg === 'ยกเลิก') {
@@ -328,6 +402,10 @@ export async function handleText(env, uid, text) {
   if (parseDocNo(msg)) return doSearch(env, { query: msg });
 
   const cmd = await parseCommand(env, msg);
+  if (cmd.failed) {
+    // บอกไปตรงๆ ว่าระบบขัดข้อง ไม่ใช่ตอบ help ซึ่งทำให้เข้าใจผิดว่าบอทอ่านไม่เข้าใจ
+    return `⚠️ เรียกระบบอ่านข้อความไม่สำเร็จ ข้อความของคุณยังไม่ถูกประมวลผล\nลองใหม่อีกครั้ง ถ้ายังไม่ได้ให้ดู log ด้วย wrangler tail\n\n(${cmd.failed})`;
+  }
   switch (cmd.intent) {
     case 'create_doc':    return doCreateDoc(env, uid, cmd);
     case 'convert_doc':   return doConvertDoc(env, uid, cmd);

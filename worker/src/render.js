@@ -2,7 +2,7 @@
 // CSS อยู่ใน doc-style.js (คัดลอกมาจากแม่แบบทั้งบล็อก) ที่นี่แค่ใส่ข้อมูลจริงลงช่อง
 // ของในแม่แบบที่เป็น JS ฝั่งหน้าเว็บ (ปุ่มสลับประเภท / ปุ่มลายน้ำ) ตัดออก
 // เพราะเอกสารจริงประเภทเดียว สถานะเดียว ตายตัวแล้วตอน render
-import { SELLER, TYPES } from './config.js';
+import { BRAND, PAYMENT, TYPES, getSeller } from './config.js';
 import { thaiSlash, fmtBaht, bahtText, bahtTextEn } from './thai.js';
 import { DOC_CSS } from './doc-style.js';
 import { LOGO_PNG, QR_PNG } from './brand.js';
@@ -19,8 +19,45 @@ const dash = (s) => {
 // แม่แบบมีแถวว่างไว้ให้หน้ากระดาษเต็ม — เติมให้ครบ 6 แถวเหมือนเดิม
 const MIN_ROWS = 6;
 
+/**
+ * สองเรื่องที่แก้นอกไฟล์แม่แบบ เพื่อให้เปิดได้ทุกอุปกรณ์ — ไม่แตะ doc-style.js
+ *
+ * 1) text-size-adjust
+ *    แม่แบบย่อหน้า A4 ด้วย zoom:.45 เมื่อจอแคบกว่า 820px แต่เบราว์เซอร์บนมือถือมี
+ *    "font boosting" ที่ขยายตัวอักษรเองเมื่อหน้าถูกย่อ และขยายเฉพาะบล็อกแคบ
+ *    กล่องที่อยู่ผู้ขายซึ่งแคบสุดจึงบวมจนตกบรรทัดดันหัวกระดาษสูงผิดสัดส่วน
+ *    กฎนี้สั่งไม่ให้เบราว์เซอร์ขยายเอง ตัวอักษรจึงย่อตามกล่อง
+ *
+ * 2) ความสูงหน้าตอนพิมพ์ — วัดจากใบจริง QT191069005 (4 รายการ) ได้ 308.4mm
+ *    ซึ่งสูงเกิน A4 (297mm) อยู่แล้ว 11mm ก่อนที่เบราว์เซอร์จะแทรกหัว/ท้ายกระดาษ
+ *    ของตัวเอง (URL, วันที่, "หน้าที่ 1 จาก 2") ด้วยซ้ำ ลายเซ็นจึงตกไปหน้า 2
+ *
+ *    แก้สองชั้นรวมกัน (ตัวเลขจากการวัดจริง):
+ *      บีบช่องว่างใต้โลโก้ + รอบลายเซ็น   308.4 -> 295.4mm
+ *      ย่อทั้งหน้า 10% เฉพาะตอนพิมพ์      295.4 -> 265.9mm  เหลือที่ว่างล่าง 31mm
+ *
+ *    31mm พอสำหรับหัวท้ายกระดาษของทุกเบราว์เซอร์ ส่วน margin:0 auto ทำให้หน้าที่
+ *    ย่อแล้ววางกลางกระดาษ ไม่เบียดไปทางซ้าย
+ *    ระยะที่บีบใช้ทั้งบนจอและตอนพิมพ์ เห็นบนจออย่างไรก็พิมพ์ออกมาอย่างนั้น
+ *    ส่วนการย่อใช้เฉพาะตอนพิมพ์ บนจอจึงยังเห็นขนาดเดิม
+ *    height:auto ทำให้เอกสารที่มีรายการยาวจริงๆ ยังไหลไปหน้าสองได้ตามปกติ
+ */
+const PAGE_FIT_CSS = `
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+
+header{margin-top:1mm}
+.titlebar{margin:4mm 0 4mm}
+.sign{padding-top:6mm}
+footer{margin-top:3mm}
+
+@media print{
+  .page{height:auto;min-height:248mm;zoom:.9;margin:0 auto}
+}
+`;
+
 export function renderDoc(row) {
   const t = TYPES[row.type];
+  const seller = getSeller(row.seller);
   const c = JSON.parse(row.customer);
   const items = JSON.parse(row.items);
   const isVoid = row.status === 'void';
@@ -89,6 +126,7 @@ export function renderDoc(row) {
 <title>${esc(t.th)} ${esc(row.doc_no)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
 <style>${DOC_CSS}</style>
+<style>${PAGE_FIT_CSS}</style>
 </head>
 <body>
 <div class="toolbar">
@@ -101,14 +139,15 @@ export function renderDoc(row) {
   <header>
     <div class="brand">
       <img src="data:image/png;base64,${LOGO_PNG}" alt="BAANBOW" style="width:30mm;height:30mm;object-fit:contain">
-      <div><div class="n" style="color:var(--wine)">${esc(SELLER.brand_th)}</div><div class="t">${esc(SELLER.brand_tagline)}</div></div>
+      <div><div class="n" style="color:var(--wine)">${esc(BRAND.brand_th)}</div><div class="t">${esc(BRAND.brand_tagline)}</div></div>
     </div>
     <div class="seller">
-      <b>${esc(SELLER.name)}</b><br>
-      ${esc(SELLER.address_line1)}<br>
-      ${esc(SELLER.address_line2)}<br>
-      เลขประจำตัวผู้เสียภาษี ${esc(SELLER.tax_id)}<br>
-      โทร ${esc(SELLER.phone)}
+      <b>${esc(seller.name)}</b><br>
+      ${esc(seller.address_line1)}<br>
+      ${esc(seller.address_line2)}<br>
+      ${seller.tax_id ? `เลขประจำตัวผู้เสียภาษี ${esc(seller.tax_id)}<br>` : ''}
+      ${seller.email ? `E-mail: ${esc(seller.email)}<br>` : ''}
+      โทร ${esc(seller.phone)}
     </div>
   </header>
 
@@ -156,7 +195,7 @@ ${fillRows}
         <img src="data:image/png;base64,${QR_PNG}" alt="KBank" style="width:30mm;height:auto;border-radius:6px;flex:none">
         <div>
           <h4>ช่องทางชำระเงิน / Payment</h4>
-          ${esc(SELLER.bank)}<br>เลขที่บัญชี <b>${esc(SELLER.bank_account)}</b><br>ชื่อบัญชี ${esc(SELLER.bank_account_name)}
+          ${esc(PAYMENT.bank)}<br>เลขที่บัญชี <b>${esc(PAYMENT.bank_account)}</b><br>ชื่อบัญชี ${esc(PAYMENT.bank_account_name)}
         </div>
       </div>
 ${noteBlock}
@@ -172,7 +211,7 @@ ${totals}
     <div><div class="ln" id="s1">${esc(t.sign[0])}</div><small>วันที่ ____/____/______</small></div>
     <div><div class="ln" id="s2">${esc(t.sign[1])}</div><small>วันที่ ____/____/______</small></div>
   </div>
-  <footer>${esc(SELLER.footer)}</footer>
+  <footer>${esc(BRAND.footer)}</footer>
 </div>
 </body>
 </html>`;

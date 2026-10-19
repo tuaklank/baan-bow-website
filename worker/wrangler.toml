@@ -18,8 +18,7 @@ BASE_URL = "https://www.baanbow.online"
 [[d1_databases]]
 binding = "DB"
 database_name = "baanbow-office"
-# เติม database_id ที่ได้จาก `wrangler d1 create baanbow-office` (ดู README ข้อ 2)
-database_id = "PUT_D1_DATABASE_ID_HERE"
+database_id = "ea3274f5-48d7-4d4a-a48d-b8a317b557cb"
 migrations_dir = "migrations"
 
 # 6 เส้น ครบทั้ง apex และ www เพราะเว็บเสิร์ฟ 200 ทั้งสองโฮสต์ ไม่ redirect หากัน

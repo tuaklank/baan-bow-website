@@ -64,13 +64,13 @@ export async function issueDocument(db, d) {
     INSERT INTO documents
       (type, doc_no, token, issue_date, valid_until, customer_id, customer, items,
        discount, vat_mode, subtotal, base, vat, wht_rate, wht, total, net_payable,
-       note, payment_terms, ref_doc_no)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       note, payment_terms, ref_doc_no, seller)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     d.type, doc_no, token, d.issue_date, d.valid_until ?? null,
     customer.id, JSON.stringify(d.customer), JSON.stringify(d.lines),
     d.discount, d.vat_mode, d.subtotal, d.base, d.vat, d.wht_rate, d.wht, d.total, d.net_payable,
-    d.note ?? null, d.payment_terms ?? null, d.ref_doc_no ?? null,
+    d.note ?? null, d.payment_terms ?? null, d.ref_doc_no ?? null, d.seller,
   ).run();
 
   return db.prepare('SELECT * FROM documents WHERE doc_no = ?').bind(doc_no).first();
@@ -107,13 +107,16 @@ export async function recentDocs(db, limit = 50) {
   return results;
 }
 
-/** สรุปยอดของเดือน (YYYY-MM) แยกตามประเภท — นับเฉพาะเอกสารที่ไม่ถูกยกเลิก */
+/**
+ * สรุปยอดของเดือน (YYYY-MM) แยกตามบริษัทผู้ขายและประเภท — นับเฉพาะเอกสารที่ไม่ถูกยกเลิก
+ * ต้องแยกตามบริษัท เพราะสองบริษัทเป็นคนละนิติบุคคล ยื่น VAT คนละชุด เอามารวมกันไม่ได้
+ */
 export async function monthSummary(db, ym) {
   const { results } = await db.prepare(`
-    SELECT type, COUNT(*) AS cnt, SUM(total) AS total, SUM(vat) AS vat, SUM(base) AS base
+    SELECT seller, type, COUNT(*) AS cnt, SUM(total) AS total, SUM(vat) AS vat, SUM(base) AS base
     FROM documents
     WHERE issue_date LIKE ? AND status = 'issued'
-    GROUP BY type
+    GROUP BY seller, type
   `).bind(ym + '%').all();
   const voided = await db.prepare(
     "SELECT COUNT(*) AS cnt FROM documents WHERE issue_date LIKE ? AND status = 'void'",
