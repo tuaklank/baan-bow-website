@@ -1,11 +1,11 @@
 // คำสั่งทั้งหมดที่รับจาก LINE — ฟังก์ชันนี้คืน "ข้อความที่จะตอบ" (null = ไม่ตอบ)
-import { TYPES, SELLERS, JOB_STATUSES, WHT_ALLOWED_BP, getSeller, sellerCanIssue } from './config.js';
+import { TYPES, SELLERS, JOB_STATUSES, JOB_DEFAULT_DUE_DAYS, WHT_ALLOWED_BP, getSeller, sellerCanIssue } from './config.js';
 import { compute } from './money.js';
 import { parseDocNo } from './numbering.js';
 import { parseCommand } from './ai.js';
 import {
   findCustomer, mergeCustomer, issueDocument, docByNo, voidDocument, searchDocs, monthSummary,
-  createJob, jobById, findJobs, updateJob, addJobEvent, openJobs,
+  createJob, jobById, jobByDocNo, findJobs, updateJob, addJobEvent, openJobs,
   savePending, takePending, clearPending, addHoliday, holidayOn,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
@@ -229,15 +229,67 @@ async function doVoidDoc(env, uid, cmd) {
     + 'เอกสารจะถูกประทับลายน้ำ "ยกเลิก" และเลขที่นี้จะใช้ซ้ำไม่ได้\nพิมพ์ "ยืนยัน" เพื่อยกเลิกเอกสาร';
 }
 
+/** ไม่ได้บอกกำหนดส่งมา ตั้งให้เป็นอีก 4 วันนับจากวันเปิดงาน */
+const defaultDue = (ymd) => addDays(ymd, JOB_DEFAULT_DUE_DAYS);
+
 async function doCreateJob(env, cmd) {
   const db = env.DB;
   const j = cmd.job || {};
   if (!j.title) return 'ขาดชื่องานครับ เช่น "เพิ่มงาน ติดตั้งโบว์บ้านคุณสมชาย ส่งมอบศุกร์หน้า"';
-  const due = isValidYmd(j.due_date) ? j.due_date : null;
+
+  const today = todayBkk();
+  const given = isValidYmd(j.due_date);
+  const due = given ? j.due_date : defaultDue(today);
+
   const job = await createJob(db, {
     title: j.title, customer: cmd.customer?.name ?? null, due_date: due, note: j.note ?? null,
   });
-  return `เพิ่มงาน #${job.id}: ${job.title}\nกำหนดส่ง: ${due ? thaiDate(due, true) + (await dateWarn(db, due)) : 'ยังไม่ระบุ'}`;
+  return `เพิ่มงาน #${job.id}: ${job.title}\n`
+    + `กำหนดส่ง: ${thaiDate(due, true)}${given ? '' : ` (ตั้งให้อัตโนมัติ ${JOB_DEFAULT_DUE_DAYS} วัน)`}`
+    + (await dateWarn(db, due))
+    + '\n\nเปลี่ยนกำหนดส่งได้ เช่น "งาน ' + job.id + ' ส่งพุธหน้า"';
+}
+
+/** เปิดงานจากเอกสารที่ออกไปแล้ว — ใช้ตอนลูกค้าตกลง/โอนแล้วเท่านั้น ไม่เปิดอัตโนมัติ */
+async function doJobFromDoc(env, cmd) {
+  const db = env.DB;
+  const no = cmd.from_doc_no || cmd.doc_no || cmd.query;
+  if (!no) return 'ระบุเลขที่เอกสารด้วยครับ เช่น "เปิดงานจาก QT191069005"';
+
+  const doc = await docByNo(db, no);
+  if (!doc) return 'ไม่พบเอกสารเลขที่ ' + no;
+  if (doc.status === 'void') return `${doc.doc_no} ถูกยกเลิกไปแล้ว เปิดงานจากใบนี้ไม่ได้`;
+
+  const existing = await jobByDocNo(db, doc.doc_no);
+  if (existing) {
+    return `${doc.doc_no} เปิดงานไปแล้วเป็นงาน #${existing.id} ${existing.title} [${existing.status}]\n`
+      + 'ถ้าต้องการเปิดงานใหม่แยกอีกงาน ใช้ "เพิ่มงาน <ชื่องาน>" แทนครับ';
+  }
+
+  const c = JSON.parse(doc.customer);
+  const items = JSON.parse(doc.items);
+  // ชื่องาน: ใช้ที่ผู้ใช้พิมพ์มา ถ้าไม่ได้พิมพ์ก็ตั้งจากรายการแรกในเอกสาร
+  const title = cmd.job?.title
+    || (items.length > 1 ? `${items[0].name} และอีก ${items.length - 1} รายการ` : items[0]?.name)
+    || `งานจาก ${doc.doc_no}`;
+
+  const today = todayBkk();
+  const given = isValidYmd(cmd.job?.due_date);
+  const due = given ? cmd.job.due_date : defaultDue(today);
+
+  const job = await createJob(db, {
+    title,
+    customer: c.name,
+    customer_id: doc.customer_id,
+    doc_no: doc.doc_no,
+    due_date: due,
+    note: cmd.job?.note ?? null,
+  });
+
+  return `เปิดงาน #${job.id} จาก ${doc.doc_no} แล้ว\n`
+    + `${title}\nลูกค้า: ${c.name}\nยอด: ${fmtBaht(doc.total)} บาท\n`
+    + `กำหนดส่ง: ${thaiDate(due, true)}${given ? '' : ` (ตั้งให้อัตโนมัติ ${JOB_DEFAULT_DUE_DAYS} วัน)`}`
+    + (await dateWarn(db, due));
 }
 
 async function doUpdateJob(env, cmd) {
@@ -411,6 +463,7 @@ export async function handleText(env, uid, text) {
     case 'convert_doc':   return doConvertDoc(env, uid, cmd);
     case 'void_doc':      return doVoidDoc(env, uid, cmd);
     case 'create_job':    return doCreateJob(env, cmd);
+    case 'job_from_doc':  return doJobFromDoc(env, cmd);
     case 'update_job':    return doUpdateJob(env, cmd);
     case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `🛠 งานค้าง (${thaiDate(todayBkk(), true)})`);
     case 'search':        return doSearch(env, cmd);
@@ -420,11 +473,33 @@ export async function handleText(env, uid, text) {
   }
 }
 
-/** ข้อความแจ้งเตือนเช้า 08:00 — เลยกำหนด / ครบวันนี้ / ครบพรุ่งนี้ */
+/** แจ้งเตือนเช้า 08:00 — วางแผนวันนี้: เลยกำหนด / ครบวันนี้ / ครบพรุ่งนี้ */
 export async function morningDigest(env) {
   const today = todayBkk();
   const rows = await openJobs(env.DB, addDays(today, 1));
   if (!rows.length) return null;
   return '🔔 ' + jobListText(rows, today, `งานที่ต้องดู (${thaiDate(today, true)})`);
+}
+
+/**
+ * ทวงตอนเย็น 17:00 — งานที่ยังไม่ปิดทั้งหมด ไม่ใช่เฉพาะที่ครบกำหนด
+ * เพราะจุดประสงค์คือให้ปิดงานที่ทำเสร็จแล้ววันนี้ และเห็นงานที่กำลังจะถึงกำหนด
+ * จะได้ตามทัน ไม่ใช่รอจนเลยกำหนดแล้วค่อยรู้
+ */
+export async function eveningDigest(env) {
+  const today = todayBkk();
+  const rows = await openJobs(env.DB);
+  if (!rows.length) return null;
+
+  const late = rows.filter((j) => j.due_date && j.due_date < today).length;
+  const due = rows.filter((j) => j.due_date === today).length;
+  const head = [
+    `สรุปงานค้างเย็นนี้ (${thaiDate(today, true)})`,
+    late ? `❗ เลยกำหนด ${late} งาน` : null,
+    due ? `⏰ ครบกำหนดวันนี้ ${due} งาน` : null,
+  ].filter(Boolean).join('\n');
+
+  return '🌆 ' + jobListText(rows, today, head)
+    + '\n\nงานไหนเสร็จแล้วพิมพ์ปิดได้เลย เช่น "งาน ' + rows[0].id + ' เสร็จแล้ว"';
 }
 

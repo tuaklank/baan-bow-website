@@ -19,7 +19,7 @@ export const SCHEMA = {
       type: 'string',
       enum: [
         'create_doc', 'convert_doc', 'void_doc',
-        'create_job', 'update_job', 'list_jobs',
+        'create_job', 'job_from_doc', 'update_job', 'list_jobs',
         'search', 'month_summary', 'add_holiday',
         'help', 'unknown',
       ],
@@ -164,6 +164,8 @@ function systemPrompt(today) {
 - ออกเอกสารใหม่จากเลขที่เอกสารเดิม เช่น "ออกใบกำกับภาษีจาก QT181069001" = convert_doc (doc_type ปลายทาง + from_doc_no)
 - ยกเลิกเอกสาร เช่น "ยกเลิก RC181069003" = void_doc (ใส่ doc_no, เหตุผลใส่ note)
 - เพิ่มงาน/สร้างงาน = create_job (job.title, job.due_date)
+- เปิดงานจากเอกสารที่ออกไปแล้ว เช่น "เปิดงานจาก QT191069005" "ลูกค้าโอนแล้ว QT191069005" = job_from_doc
+  (ใส่ from_doc_no เป็นเลขที่เอกสาร ถ้าผู้ใช้พิมพ์ชื่องานต่อท้ายมาด้วยให้ใส่ job.title)
 - อัปเดตงาน/งานเสร็จแล้ว/เลื่อนกำหนด = update_job (job.ref + job.status)
 - งานค้าง/งานวันนี้/งานทั้งหมด = list_jobs
 - หา/ค้นหา/มีบิลอะไรบ้าง ตามด้วยเลขที่เอกสารหรือชื่อลูกค้า = search (ใส่ query)

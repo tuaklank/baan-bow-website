@@ -69,4 +69,21 @@ export const WHT_ALLOWED_BP = [100, 300];  // หัก ณ ที่จ่า�
 export const JOB_STATUSES = ['รอดำเนินการ', 'กำลังทำ', 'รอลูกค้า', 'เสร็จ', 'ยกเลิก'];
 export const JOB_OPEN_SQL = "status NOT IN ('เสร็จ','ยกเลิก')";
 
+// ไม่ได้บอกกำหนดส่งมา ให้ตั้งเป็นอีก 4 วันนับจากวันที่เปิดงาน
+export const JOB_DEFAULT_DUE_DAYS = 4;
+
+// Cloudflare รับ cron เป็น UTC เท่านั้น เวลาไทย = UTC+7
+// แก้เวลาแจ้งเตือนที่นี่ แล้วแก้ใน wrangler.toml ให้ตรงกันด้วย
+export const CRON_MORNING = '0 1 * * *';    // 08:00 น. เวลาไทย — วางแผนงานวันนี้
+export const CRON_EVENING = '0 10 * * *';   // 17:00 น. เวลาไทย — ทวงงานที่ยังค้าง
+
+/**
+ * รอบทดสอบครั้งเดียว 20:00 น. เวลาไทย ของวันที่ระบุใน CRON_TEST_DATE เท่านั้น
+ * Cloudflare ไม่มี cron แบบยิงครั้งเดียว จึงกันด้วยวันที่ในโค้ดแทน
+ * พ้นวันนั้นแล้วจะไม่ส่งอะไรอีก ถึงจะลืมถอด cron ออกจาก wrangler.toml ก็ไม่รบกวน
+ * (ถอดออกได้เลยหลังทดสอบเสร็จ — ลบบรรทัด "0 13 * * *" ใน wrangler.toml)
+ */
+export const CRON_TEST = '0 13 * * *';
+export const CRON_TEST_DATE = '2026-10-19';
+
 export const PENDING_TTL_MS = 15 * 60 * 1000;   // รายการรอยืนยันหมดอายุ 15 นาที

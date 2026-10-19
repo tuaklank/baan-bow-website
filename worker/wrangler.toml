@@ -7,9 +7,14 @@ compatibility_date = "2026-10-18"
 # @anthropic-ai/sdk ต้องการ shim ของ node builtin บน Workers
 compatibility_flags = ["nodejs_compat"]
 
-# เวลาไทย = UTC+7 → 01:00 UTC คือ 08:00 น. ที่ไทย
+# เวลาไทย = UTC+7 (Cloudflare รับ cron เป็น UTC เท่านั้น)
+#   01:00 UTC = 08:00 น. ไทย — วางแผนงานวันนี้
+#   10:00 UTC = 17:00 น. ไทย — ทวงงานค้างก่อนเลิกงาน
+# แก้เวลาแล้วต้องแก้ CRON_MORNING / CRON_EVENING ใน src/config.js ให้ตรงกันด้วย
 [triggers]
-crons = ["0 1 * * *"]
+#   13:00 UTC = 20:00 น. ไทย — รอบทดสอบครั้งเดียว ถอดบรรทัดนี้ออกได้หลังทดสอบเสร็จ
+#                              (โค้ดกันไว้แล้วว่ายิงเฉพาะวันที่ CRON_TEST_DATE)
+crons = ["0 1 * * *", "0 10 * * *", "0 13 * * *"]
 
 [vars]
 CLAUDE_MODEL = "claude-sonnet-5-5"

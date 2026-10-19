@@ -125,16 +125,20 @@ export async function monthSummary(db, ym) {
 }
 
 // ---------- งาน ----------
-export async function createJob(db, { title, customer, due_date, note, doc_no }) {
+export async function createJob(db, { title, customer, customer_id, due_date, note, doc_no }) {
   const res = await db.prepare(
-    'INSERT INTO jobs (title, customer, due_date, note, doc_no) VALUES (?,?,?,?,?)',
-  ).bind(title, customer ?? null, due_date ?? null, note ?? null, doc_no ?? null).run();
+    'INSERT INTO jobs (title, customer, customer_id, due_date, note, doc_no) VALUES (?,?,?,?,?,?)',
+  ).bind(title, customer ?? null, customer_id ?? null, due_date ?? null, note ?? null, doc_no ?? null).run();
   const id = res.meta.last_row_id;
   await db.prepare('INSERT INTO job_events (job_id, text) VALUES (?, ?)').bind(id, 'สร้างงาน').run();
   return db.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first();
 }
 
 export const jobById = (db, id) => db.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first();
+
+/** งานที่เปิดจากเอกสารใบนี้ไปแล้ว — กันเปิดซ้ำจากใบเดิม */
+export const jobByDocNo = (db, docNo) =>
+  db.prepare('SELECT * FROM jobs WHERE doc_no = ? ORDER BY id DESC').bind(docNo).first();
 
 export async function findJobs(db, q) {
   const like = '%' + String(q).trim() + '%';

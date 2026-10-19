@@ -3,7 +3,8 @@
 //   GET  /d/:token  เอกสาร A4
 //   GET  /admin     หลังบ้านมือถือ (กั้นด้วย Cloudflare Access)
 import { verifySignature, reply, push } from './line.js';
-import { handleText, morningDigest } from './handlers.js';
+import { handleText, morningDigest, eveningDigest } from './handlers.js';
+import { CRON_EVENING, CRON_TEST, CRON_TEST_DATE } from './config.js';
 import { docByToken, recentDocs, searchDocs, openJobs, monthSummary } from './db.js';
 import { renderDoc } from './render.js';
 import { renderAdmin } from './admin.js';
@@ -99,11 +100,24 @@ export default {
     return new Response('not found', { status: 404 });
   },
 
-  // Cron "0 1 * * *" = 08:00 เวลาไทย — แจ้งเตือนงานเลยกำหนด/ครบวันนี้/ครบพรุ่งนี้
+  // แจ้งเตือน 2 รอบต่อวัน (เวลาใน wrangler.toml เป็น UTC, ไทย = UTC+7)
+  //   08:00 น. วางแผนงานวันนี้     — งานเลยกำหนด/ครบวันนี้/ครบพรุ่งนี้
+  //   17:00 น. ทวงก่อนเลิกงาน      — งานค้างทั้งหมด ให้ปิดงานที่เสร็จแล้ว
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
-      const msg = await morningDigest(env);
-      if (!msg) return;
+      let msg;
+      if (event.cron === CRON_TEST) {
+        // รอบทดสอบครั้งเดียว — วันอื่นไม่ต้องทำอะไร
+        if (todayBkk() !== CRON_TEST_DATE) return;
+        // รอบนี้ต้องส่งเสมอ แม้ไม่มีงานค้าง ไม่งั้นแยกไม่ออกว่าระบบเงียบหรือระบบพัง
+        msg = '🧪 ทดสอบระบบแจ้งเตือน (รอบเดียว 20:00 น.)\n\n'
+          + (await eveningDigest(env) ?? 'ตอนนี้ไม่มีงานค้างในระบบ');
+      } else {
+        msg = event.cron === CRON_EVENING
+          ? await eveningDigest(env)
+          : await morningDigest(env);
+      }
+      if (!msg) return;   // ไม่มีงานค้างก็ไม่ต้องรบกวน
       const allowed = (env.ALLOWED_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
       for (const uid of allowed) await push(env, uid, msg);
     })());
