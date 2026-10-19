@@ -12,7 +12,7 @@ import {
   savePending, takePending, clearPending, addHoliday, holidayOn,
   findProduct, productKey, upsertProduct, receiveStock, listStock, stockOf,
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
-  addExpense, monthExpenses,
+  addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
 import { todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, thaiDate, thaiMonth, fmtBaht } from './thai.js';
@@ -45,6 +45,8 @@ export const HELP = `คำสั่งที่ใช้ได้
 💸 รายจ่าย
 • ค่าวัสดุ 450 ซื้อริบบิ้น
 • ค่าส่ง 60 Kerry   /   ค่าแรง 300 พี่หน่อย   /   ค่าเช่า 3500
+• ยกเลิกรายจ่าย 12               (ลงผิด — ยกเลิก ไม่ลบ ประวัติยังอยู่)
+• แก้รายจ่าย 12 ค่าส่ง 80         (ยกเลิกของเดิมแล้วลงใหม่ ไม่ทับของเดิม)
 
 📅 วันหยุด
 • เพิ่มวันหยุด 31 ธันวาคม สิ้นปี
@@ -671,7 +673,101 @@ async function doAddExpense(env, cmd) {
   return `💸 บันทึก${category} ${fmtBaht(amount)} บาท\n`
     + `${thaiDate(spent_date, true)}${e.note ? ' · ' + e.note : ''}\n`
     + (job ? `งาน #${job.id} ${job.title}\n` : '')
-    + `ในนาม ${getSeller(row.seller).label} · รายการที่ ${row.id}`;
+    + `ในนาม ${getSeller(row.seller).label} · รายการที่ ${row.id}\n`
+    + `(ลงผิดแก้ได้ — "แก้รายจ่าย ${row.id} ค่าส่ง 80" หรือ "ยกเลิกรายจ่าย ${row.id}")`;
+}
+
+/**
+ * เลขรายการที่จะแก้/ยกเลิก — AI ใส่มาที่ expense.id
+ * เผื่อมาทาง query ด้วย เพราะ "ยกเลิกรายจ่าย 12" บางทีถูกอ่านเป็นคำค้น
+ */
+function expenseRef(cmd) {
+  const n = Number(cmd.expense?.id || 0);
+  if (n > 0) return Math.round(n);
+  const m = String(cmd.query ?? '').match(/[0-9]+/);
+  return m ? Number(m[0]) : 0;
+}
+
+/** บรรทัดเดียวที่บอกว่ารายการนี้คืออะไร ใช้ทั้งตอนถามยืนยันและตอนตอบผลลัพธ์ */
+const expenseLine = (r) => `${r.category} ${fmtBaht(r.amount)} บาท · ${thaiDate(r.spent_date, true)}`
+  + (r.note ? ` · ${r.note}` : '')
+  + (r.job_id ? ` · งาน #${r.job_id}` : '');
+
+/** ยกเลิกรายจ่ายที่ลงผิด — ไม่ลบแถว เหมือนยกเลิกเอกสาร (doVoidDoc) */
+async function doVoidExpense(env, uid, cmd) {
+  const db = env.DB;
+  const id = expenseRef(cmd);
+  if (!id) {
+    return 'ระบุเลขรายการที่จะยกเลิกด้วยครับ เช่น "ยกเลิกรายจ่าย 12"\n'
+      + '(เลขรายการอยู่ท้ายข้อความตอนบันทึก)';
+  }
+
+  const row = await expenseById(db, id);
+  if (!row) return `ไม่พบรายจ่ายรายการที่ ${id}`;
+  if (row.status === 'void') {
+    return `รายการที่ ${id} ถูกยกเลิกไปแล้ว${row.void_reason ? ` (${row.void_reason})` : ''}\n${expenseLine(row)}`
+      + (row.replaced_by ? `\nยอดที่ใช้แทนคือรายการที่ ${row.replaced_by}` : '');
+  }
+
+  await savePending(db, uid, { kind: 'void_expense', id, reason: cmd.expense?.note ?? cmd.note ?? null });
+  return `จะยกเลิกรายจ่ายรายการที่ ${id}\n${expenseLine(row)}\n`
+    + `ในนาม ${getSeller(row.seller).label}\n\n`
+    + 'ยอดนี้จะหายจากสรุปเดือนนั้น แต่แถวยังอยู่ให้ย้อนดูได้\n'
+    + 'พิมพ์ "ยืนยัน" เพื่อยกเลิกรายจ่าย';
+}
+
+/**
+ * แก้รายจ่าย = ยกเลิกของเดิมแล้วลงใหม่ ไม่ UPDATE ทับ (ดู replaceExpense ใน db.js)
+ * ช่องที่ผู้ใช้ไม่ได้พูดถึงใช้ค่าเดิม จะได้พิมพ์สั้นๆ ว่า "แก้รายจ่าย 12 ค่าส่ง 80" ได้
+ */
+async function doEditExpense(env, uid, cmd) {
+  const db = env.DB;
+  const id = expenseRef(cmd);
+  if (!id) return 'ระบุเลขรายการที่จะแก้ด้วยครับ เช่น "แก้รายจ่าย 12 ค่าส่ง 80"';
+
+  const row = await expenseById(db, id);
+  if (!row) return `ไม่พบรายจ่ายรายการที่ ${id}`;
+  if (row.status === 'void') {
+    // ยกเลิกแล้วแก้ไม่ได้ ไม่งั้นจะมีแถวใหม่งอกจากแถวที่ไม่นับในยอดแล้ว ตามประวัติยาก
+    return `รายการที่ ${id} ถูกยกเลิกไปแล้ว แก้ไม่ได้ครับ${row.replaced_by ? `\nแก้รายการที่ ${row.replaced_by} แทน` : ''}\n`
+      + 'ถ้ายอดนี้ควรมีอยู่ ให้ลงใหม่เลย เช่น "ค่าส่ง 60 Kerry"';
+  }
+
+  const e = cmd.expense || {};
+  let job_id = row.job_id;
+  if (cmd.job?.ref) {
+    const r = await resolveJob(db, cmd.job.ref);
+    if (r.error) return r.error;
+    job_id = r.job.id;
+  }
+
+  const next = {
+    spent_date: isValidYmd(e.spent_date) ? e.spent_date : row.spent_date,
+    category: EXPENSE_CATEGORIES.includes(e.category) ? e.category : row.category,
+    amount: e.amount > 0 ? toSatang(e.amount) : row.amount,
+    note: e.note ?? row.note,
+    job_id,
+    seller: cmd.seller ? getSeller(cmd.seller).key : row.seller,
+  };
+
+  // อ่านมาแล้วไม่มีอะไรเปลี่ยน อย่าเพิ่งยกเลิกแถวเดิมทิ้งเปล่าๆ
+  const same = next.spent_date === row.spent_date && next.category === row.category
+    && next.amount === row.amount && (next.note ?? null) === (row.note ?? null)
+    && (next.job_id ?? null) === (row.job_id ?? null) && next.seller === row.seller;
+  if (same) {
+    return `รายการที่ ${id} ตรงกับที่พิมพ์มาอยู่แล้ว ไม่ต้องแก้ครับ\n${expenseLine(row)}\n\n`
+      + `จะแก้อะไรบอกมาได้เลย เช่น "แก้รายจ่าย ${id} ค่าส่ง 80" หรือ "แก้รายจ่าย ${id} ค่าวัสดุ"`;
+  }
+
+  await savePending(db, uid, { kind: 'edit_expense', id, next });
+  return `จะแก้รายจ่ายรายการที่ ${id}\n`
+    + `เดิม: ${expenseLine(row)}\n`
+    + `ใหม่: ${expenseLine(next)}\n`
+    + (next.seller !== row.seller
+      ? `ในนาม ${getSeller(row.seller).label} → ${getSeller(next.seller).label}\n`
+      : '')
+    + '\nระบบจะยกเลิกรายการเดิมแล้วลงใหม่ให้ (แถวเดิมยังอยู่ให้ย้อนดูได้)\n'
+    + 'พิมพ์ "ยืนยัน" เพื่อแก้';
 }
 
 // ---------- ยืนยัน ----------
@@ -684,6 +780,22 @@ async function doConfirm(env, uid) {
   if (p.kind === 'void') {
     const ok = await voidDocument(db, p.doc_no, p.reason);
     return ok ? `🚫 ยกเลิก ${p.doc_no} แล้ว เอกสารยังเปิดดูได้แต่มีลายน้ำ "ยกเลิก"` : `${p.doc_no} ถูกยกเลิกไปก่อนหน้านี้แล้ว`;
+  }
+
+  if (p.kind === 'void_expense') {
+    const row = await expenseById(db, p.id);
+    if (!(await voidExpense(db, p.id, p.reason))) return `รายการที่ ${p.id} ถูกยกเลิกไปก่อนหน้านี้แล้ว`;
+    return `🚫 ยกเลิกรายจ่ายรายการที่ ${p.id} แล้ว\n${expenseLine(row)}\n`
+      + 'ยอดนี้ไม่นับในสรุปเดือนนั้นแล้ว แต่ยังเห็นในหน้ารายจ่ายว่าเคยลงไว้';
+  }
+
+  if (p.kind === 'edit_expense') {
+    const { ok, row } = await replaceExpense(db, p.id, p.next, 'แก้ไข');
+    if (!ok) {
+      return `รายการที่ ${p.id} ถูกยกเลิกไปก่อนหน้านี้แล้ว แก้ไม่ได้\nลงใหม่ได้เลยครับ`;
+    }
+    return `✏️ แก้รายจ่ายแล้ว — ยกเลิกรายการที่ ${p.id} ลงใหม่เป็นรายการที่ ${row.id}\n`
+      + `${expenseLine(row)}\nในนาม ${getSeller(row.seller).label}`;
   }
 
   if (p.kind === 'need_vat') return 'ยังไม่ได้ตอบเรื่อง VAT ครับ — ' + askVat(TYPES[p.base.type].tax);
@@ -788,6 +900,8 @@ export async function handleText(env, uid, text) {
     case 'set_price':     return doSetPrice(env, cmd);
     case 'ship_job':      return doShipJob(env, uid, cmd);
     case 'add_expense':   return doAddExpense(env, cmd);
+    case 'void_expense':  return doVoidExpense(env, uid, cmd);
+    case 'edit_expense':  return doEditExpense(env, uid, cmd);
     case 'job_from_doc':  return doJobFromDoc(env, cmd);
     case 'update_job':    return doUpdateJob(env, cmd);
     case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `🛠 งานค้าง (${thaiDate(todayBkk(), true)})`);

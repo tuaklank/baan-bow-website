@@ -296,6 +296,15 @@ export async function addExpense(db, e) {
   return db.prepare('SELECT * FROM expenses WHERE id = ?').bind(res.meta.last_row_id).first();
 }
 
+export async function expenseById(db, id) {
+  return db.prepare('SELECT * FROM expenses WHERE id = ?').bind(id).first();
+}
+
+/**
+ * รายการล่าสุด — คืนทั้งที่ยกเลิกแล้วด้วยโดยตั้งใจ หน้า /admin ต้องยังเห็นว่าเคยลงอะไรไว้
+ * ฝั่งที่รวมยอด (monthExpenses / monthlyTrend / jobExpenses) กรอง 'void' ออกให้แล้ว
+ * ที่นี่เป็นรายการ ไม่ใช่ยอด ใครเอาไปรวมเองต้องเช็ค status เอง
+ */
 export async function recentExpenses(db, limit = 50) {
   const { results } = await db.prepare(
     'SELECT * FROM expenses ORDER BY spent_date DESC, id DESC LIMIT ?',
@@ -303,11 +312,35 @@ export async function recentExpenses(db, limit = 50) {
   return results;
 }
 
-/** รายจ่ายของเดือน (YYYY-MM) แยกหมวดและแยกบริษัท — คู่กับ monthSummary ที่เป็นฝั่งรายรับ */
+/** ยกเลิกรายจ่าย — ไม่ลบแถว เหมือน voidDocument; คืน false ถ้ายกเลิกไปแล้ว */
+export async function voidExpense(db, id, reason, replacedBy = null) {
+  const res = await db.prepare(`
+    UPDATE expenses
+    SET status = 'void', void_reason = ?, voided_at = datetime('now'), replaced_by = ?
+    WHERE id = ? AND status = 'recorded'
+  `).bind(reason ?? null, replacedBy, id).run();
+  return res.meta.changes > 0;
+}
+
+/**
+ * "แก้ไข" รายจ่าย = ยกเลิกแถวเดิมแล้วลงแถวใหม่ ไม่ UPDATE ทับ ประวัติจะได้ไม่หาย
+ * ยกเลิกก่อนลงใหม่ ถ้าแถวเดิมถูกยกเลิกไปแล้วจะได้ไม่มีแถวใหม่โผล่มาซ้ำ
+ */
+export async function replaceExpense(db, id, next, reason) {
+  if (!(await voidExpense(db, id, reason ?? 'แก้ไข'))) return { ok: false, row: null };
+  const row = await addExpense(db, next);
+  await db.prepare('UPDATE expenses SET replaced_by = ? WHERE id = ?').bind(row.id, id).run();
+  return { ok: true, row };
+}
+
+/**
+ * รายจ่ายของเดือน (YYYY-MM) แยกหมวดและแยกบริษัท — คู่กับ monthSummary ที่เป็นฝั่งรายรับ
+ * ไม่นับรายการที่ยกเลิกแล้ว เหมือนที่ฝั่งรายรับไม่นับเอกสาร status='void'
+ */
 export async function monthExpenses(db, ym) {
   const { results } = await db.prepare(`
     SELECT seller, category, COUNT(*) AS cnt, SUM(amount) AS total
-    FROM expenses WHERE spent_date LIKE ?
+    FROM expenses WHERE spent_date LIKE ? AND status = 'recorded'
     GROUP BY seller, category
   `).bind(ym + '%').all();
   return results;
@@ -327,7 +360,7 @@ export async function monthlyTrend(db, from) {
 
   const spent = await db.prepare(`
     SELECT substr(spent_date, 1, 7) AS ym, SUM(amount) AS total
-    FROM expenses WHERE spent_date >= ?
+    FROM expenses WHERE spent_date >= ? AND status = 'recorded'
     GROUP BY ym
   `).bind(from + '-01').all();
 
@@ -336,7 +369,7 @@ export async function monthlyTrend(db, from) {
 
 export async function jobExpenses(db, jobId) {
   const { results } = await db.prepare(
-    'SELECT * FROM expenses WHERE job_id = ? ORDER BY id DESC',
+    "SELECT * FROM expenses WHERE job_id = ? AND status = 'recorded' ORDER BY id DESC",
   ).bind(jobId).all();
   return results;
 }

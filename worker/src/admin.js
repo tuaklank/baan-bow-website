@@ -121,11 +121,15 @@ ${rows.map(stockCard).join('\n')}`;
 }
 
 function expenseCard(e) {
-  return `<div class="card">
+  // ยกเลิกแล้วยังต้องเห็นว่าเคยลงอะไรไว้ แค่ขีดฆ่าให้รู้ว่าไม่นับในยอด (เหมือน docCard)
+  const voided = e.status === 'void';
+  return `<div class="card${voided ? ' void' : ''}">
   <div class="row"><h3>${esc(e.category)}</h3><span class="amt">${fmtBaht(e.amount)}</span></div>
-  <div class="meta"><span>${thaiDateShort(e.spent_date)}</span>${
+  <div class="meta"><span>#${e.id}</span><span>${thaiDateShort(e.spent_date)}</span>${
     e.note ? `<span>${esc(e.note)}</span>` : ''
-  }${e.job_id ? `<span>งาน #${e.job_id}</span>` : ''}<span>${esc(getSeller(e.seller).label)}</span></div>
+  }${e.job_id ? `<span>งาน #${e.job_id}</span>` : ''}<span>${esc(getSeller(e.seller).label)}</span>${
+    voided ? `<span class="tag late">ยกเลิกแล้ว${e.void_reason ? ' · ' + esc(e.void_reason) : ''}</span>` : ''
+  }${voided && e.replaced_by ? `<span>แทนด้วย #${e.replaced_by}</span>` : ''}</div>
 </div>`;
 }
 
@@ -138,11 +142,13 @@ function expensesView(rows, month) {
     byCat.set(r.category, cur + r.total);
   }
   const total = month.reduce((a, r) => a + r.total, 0);
+  const voided = rows.filter((r) => r.status === 'void').length;
   return `<div class="sum">
   <h2>รายจ่ายเดือนนี้</h2>
   ${EXPENSE_CATEGORIES.filter((c) => byCat.has(c))
     .map((c) => `<div class="line"><span>${esc(c)}</span><b>${fmtBaht(byCat.get(c))}</b></div>`).join('')}
   <div class="line grand"><span>รวม</span><b>${fmtBaht(total)}</b></div>
+  ${voided ? `<div class="line"><span>ยกเลิกแล้ว (ในรายการล่าสุด ไม่นับในยอด)</span><b>${voided} รายการ</b></div>` : ''}
 </div>
 ${rows.map(expenseCard).join('\n')}`;
 }

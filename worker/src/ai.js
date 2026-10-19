@@ -22,7 +22,7 @@ export const SCHEMA = {
         'create_doc', 'convert_doc', 'void_doc',
         'create_job', 'job_from_doc', 'update_job', 'list_jobs',
         'receive_stock', 'ship_job', 'count_stock', 'list_stock', 'set_price',
-        'add_expense',
+        'add_expense', 'void_expense', 'edit_expense',
         'search', 'month_summary', 'add_holiday',
         'help', 'unknown',
       ],
@@ -107,8 +107,9 @@ export const SCHEMA = {
     expense: {
       type: 'object',
       additionalProperties: false,
-      required: ['category', 'amount', 'spent_date', 'note'],
+      required: ['id', 'category', 'amount', 'spent_date', 'note'],
       properties: {
+        id:         { type: 'number', description: 'เลขรายการที่จะแก้หรือยกเลิก ไม่ใช่กรณีนั้นให้ใส่ 0' },
         category:   { type: 'string', description: 'ค่าวัสดุ | ค่าส่ง | ค่าแรง | อื่นๆ' },
         amount:     { type: 'number', description: 'ยอดเป็นบาท ตามที่ผู้ใช้พิมพ์' },
         spent_date: { type: 'string', description: 'YYYY-MM-DD ค.ศ. ไม่บอกวันให้ใส่ "" (ระบบใช้วันนี้)' },
@@ -126,7 +127,7 @@ export const EMPTY = {
   job: { ref: null, title: null, due_date: null, status: null, note: null },
   holiday: { date: null, name: null },
   stock: { name: null, qty: 0, unit_cost: null, price: null, note: null },
-  expense: { category: null, amount: 0, spent_date: null, note: null },
+  expense: { id: 0, category: null, amount: 0, spent_date: null, note: null },
   failed: null,
 };
 
@@ -180,6 +181,7 @@ function normalize(raw) {
       note: str(st.note),
     },
     expense: {
+      id: Math.round(num(ex.id)),
       category: str(ex.category),
       amount: num(ex.amount),
       spent_date: str(ex.spent_date),
@@ -226,6 +228,13 @@ function systemPrompt(today) {
   (expense.category ต้องเป็น 1 ใน 4 หมวด: ค่าวัสดุ ค่าส่ง ค่าแรง อื่นๆ
    ค่าเช่า ค่าน้ำค่าไฟ ค่าธรรมเนียม จัดเป็น "อื่นๆ"
    ถ้าบอกว่าเป็นรายจ่ายของงานไหนให้ใส่ job.ref ด้วย)
+- ยกเลิกรายจ่ายที่ลงผิด เช่น "ยกเลิกรายจ่าย 12" "รายจ่าย 12 ลงผิด" = void_expense
+  (expense.id = เลขรายการ, เหตุผลที่ยกเลิกใส่ expense.note)
+- แก้รายจ่ายที่ลงผิด เช่น "แก้รายจ่าย 12 ค่าส่ง 80" "รายจ่าย 12 เป็น 80 บาท"
+  "แก้รายจ่าย 12 วันที่ 18/10" = edit_expense
+  (expense.id = เลขรายการ แล้วใส่เฉพาะช่องที่ผู้ใช้บอกว่าจะแก้ ช่องที่ไม่พูดถึงให้ใส่ "" หรือ 0
+   ระบบจะใช้ค่าเดิมของรายการนั้นให้เอง ห้ามเดาค่าเดิมมาใส่)
+  ต่างจาก add_expense ตรงที่มีเลขรายการเดิมอ้างอยู่ — ไม่มีเลขรายการเมื่อไหร่คือ add_expense
 - เพิ่มวันหยุด = add_holiday (holiday.date + holiday.name)
 - ขอดูคำสั่ง/ช่วยด้วย = help
 - อ่านไม่ออกหรือไม่เข้าข้อไหน = unknown

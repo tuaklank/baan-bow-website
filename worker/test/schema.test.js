@@ -47,5 +47,6 @@ test('intent ครอบคลุมทุกคำสั่งที่ handle
     'add_expense', 'add_holiday', 'convert_doc', 'count_stock', 'create_doc', 'create_job',
     'help', 'job_from_doc', 'list_jobs', 'list_stock', 'month_summary', 'receive_stock',
     'search', 'set_price', 'ship_job', 'unknown', 'update_job', 'void_doc',
+    'void_expense', 'edit_expense',
   ].sort());
 });
