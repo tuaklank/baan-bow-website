@@ -1,8 +1,9 @@
 // หน้าหลังบ้านสำหรับมือถือ — 5 แท็บ งาน / เอกสาร / สต๊อก / รายจ่าย / สรุป
 // ไม่มีระบบ login ในนี้ ตั้งใจให้ Cloudflare Access กั้นหน้า /admin จากข้างนอก
 import { TYPES, EXPENSE_CATEGORIES, getSeller } from './config.js';
-import { thaiDateShort, thaiDate, thaiMonth, fmtBaht } from './thai.js';
+import { thaiDateShort, thaiDate, thaiMonth, thaiMonthShort, fmtBaht } from './thai.js';
 import { esc } from './render.js';
+import { C, CHART_CSS, monthlyBars, hBars, legend, signed } from './chart.js';
 
 const CSS = `
 :root{--wine:#B5161F;--wine2:#D23A44;--gold:#B8895A;--ink:#1F2430;--mute:#6B7280;--line:#E6E1DC;--soft:#FBF7F4;--bg:#F4F1EE}
@@ -16,7 +17,10 @@ nav{display:flex;gap:4px}
 nav a{flex:1;min-width:0;text-align:center;padding:9px 2px;font-size:13px;font-weight:500;color:#fff;text-decoration:none;
   border-radius:8px 8px 0 0;background:rgba(0,0,0,.18);white-space:nowrap}
 nav a.on{background:var(--bg);color:var(--wine);font-weight:600}
-main{padding:14px 12px}
+/* หน้านี้ทำมาเพื่อมือถือ บนจอกว้างจึงจัดเป็นคอลัมน์เดียวกลางจอ
+   ไม่งั้น SVG ที่กว้าง 100% จะขยายจนตัวอักษรในกราฟใหญ่กว่าหัวข้อของการ์ด */
+main{padding:14px 12px;max-width:480px;margin:0 auto}
+header{padding-left:max(16px,calc((100% - 480px)/2 + 4px));padding-right:max(16px,calc((100% - 480px)/2 + 4px))}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;
   box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card h3{font-size:15px;font-weight:600;margin-bottom:4px}
@@ -46,7 +50,17 @@ form.search button{font:600 14px 'Sarabun';border:0;border-radius:10px;padding:1
 .sum .grand{background:var(--wine);color:#fff;font-weight:600}
 .empty{text-align:center;color:var(--mute);padding:30px 10px;font-size:14px}
 footer{text-align:center;font-size:10px;letter-spacing:2px;color:var(--gold);margin-top:18px;text-transform:uppercase}
-`;
+details.nums{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
+details.nums summary{font-size:12.5px;color:var(--mute);cursor:pointer;list-style:none}
+details.nums summary::-webkit-details-marker{display:none}
+details.nums summary::before{content:'▸ ';font-size:10px}
+details.nums[open] summary::before{content:'▾ '}
+details.nums table{width:100%;border-collapse:collapse;margin-top:6px;font-size:12.5px}
+details.nums th,details.nums td{padding:4px 0;text-align:right;border-bottom:1px solid var(--line)}
+details.nums th:first-child,details.nums td:first-child{text-align:left}
+details.nums th{font-weight:500;color:var(--mute)}
+details.nums td{font-variant-numeric:tabular-nums}
+${CHART_CSS}`;
 
 export const TABS = ['jobs', 'docs', 'stock', 'expenses', 'summary'];
 const TAB_LABEL = { jobs: 'งาน', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', summary: 'สรุป' };
@@ -133,7 +147,7 @@ function expensesView(rows, month) {
 ${rows.map(expenseCard).join('\n')}`;
 }
 
-function summaryView(s, openCount, lateCount, todayCount, monthExp, stock) {
+function summaryView(s, openCount, lateCount, todayCount, monthExp, stock, trend) {
   // แยกกล่องตามบริษัท — คนละนิติบุคคล ยื่น VAT คนละชุด ห้ามเอายอดมารวมกัน
   const bySeller = new Map();
   for (const r of s.byType) {
@@ -166,41 +180,69 @@ function summaryView(s, openCount, lateCount, todayCount, monthExp, stock) {
   const expByCat = new Map();
   for (const r of monthExp || []) expByCat.set(r.category, (expByCat.get(r.category) ?? 0) + r.total);
 
-  return `${blocks}
-${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><span>เอกสารที่ยกเลิก (ไม่นับในยอด)</span><b>${s.voidCount} ใบ</b></div></div>` : ''}
-
-<div class="sum">
-  <h2>รายจ่าย · ${esc(thaiMonth(s.month))}</h2>
-  ${expByCat.size
-    ? EXPENSE_CATEGORIES.filter((c) => expByCat.has(c))
-      .map((c) => `<div class="line"><span>${esc(c)}</span><b>${fmtBaht(expByCat.get(c))}</b></div>`).join('')
-    : '<div class="line"><span>ยังไม่ได้บันทึกรายจ่ายเดือนนี้</span><b>0.00</b></div>'}
-  <div class="line grand"><span>รวมรายจ่าย</span><b>${fmtBaht(spent)}</b></div>
-</div>
-
-<div class="sum">
-  <h2>รายรับ − รายจ่าย</h2>
-  <div class="line"><span>รายรับ (เอกสารที่ออก)</span><b>${fmtBaht(income)}</b></div>
-  <div class="line"><span>รายจ่าย</span><b>${fmtBaht(spent)}</b></div>
-  <div class="line grand"><span>เหลือ</span><b>${fmtBaht(left)}</b></div>
-</div>
-
-<div class="sum">
-  <h2>สต๊อก</h2>
-  <div class="line"><span>รายการในสต๊อก</span><b>${stock?.count ?? 0}</b></div>
-  <div class="line"><span>มูลค่าตามต้นทุน</span><b>${fmtBaht(stock?.value || 0)}</b></div>
-  ${stock?.negative ? `<div class="line"><span>ยอดติดลบ</span><b style="color:var(--wine)">${stock.negative} รายการ</b></div>` : ''}
-</div>
-
-<div class="sum">
-  <h2>งาน</h2>
-  <div class="line"><span>งานค้างทั้งหมด</span><b>${openCount}</b></div>
-  <div class="line"><span>เลยกำหนด</span><b style="color:var(--wine)">${lateCount}</b></div>
-  <div class="line"><span>ครบวันนี้</span><b style="color:#C2410C">${todayCount}</b></div>
+  // ตัวเลขนำของหน้านี้ มีได้ตัวเดียว — กำไรเดือนนี้คือสิ่งที่เจ้าของอยากรู้ก่อนอย่างอื่น
+  const hero = `<div class="hero">
+  <div class="lb">เหลือเดือนนี้ · ${esc(thaiMonth(s.month))}</div>
+  <div class="big ${left < 0 ? 'down' : 'up'}">${signed(left)}</div>
+  <div class="split">
+    <span><i style="background:${C.income}"></i>รายรับ <b>${fmtBaht(income)}</b></span>
+    <span><i style="background:${C.spend}"></i>รายจ่าย <b>${fmtBaht(spent)}</b></span>
+  </div>
 </div>`;
+
+  const trendPanel = (trend || []).length ? `<div class="panel">
+  <h2>รายรับเทียบรายจ่าย</h2>
+  <div class="sub">ย้อนหลัง ${trend.length} เดือน</div>
+  ${legend([{ color: C.income, label: 'รายรับ' }, { color: C.spend, label: 'รายจ่าย' }])}
+  ${monthlyBars(trend)}
+  <details class="nums"><summary>ดูเป็นตัวเลข</summary>
+    <table><thead><tr><th>เดือน</th><th>รายรับ</th><th>รายจ่าย</th><th>เหลือ</th></tr></thead><tbody>
+    ${trend.map((r) => `<tr><td>${esc(thaiMonthShort(r.ym))}</td><td>${fmtBaht(r.income)}</td><td>${fmtBaht(r.spent)}</td><td>${signed(r.income - r.spent)}</td></tr>`).join('')}
+    </tbody></table>
+  </details>
+</div>` : '';
+
+  const expRows = EXPENSE_CATEGORIES.filter((c) => expByCat.has(c))
+    .map((c) => ({ label: c, value: expByCat.get(c) }))
+    .sort((a, b) => b.value - a.value);
+
+  const expPanel = `<div class="panel">
+  <h2>รายจ่ายแยกหมวด</h2>
+  <div class="sub">${esc(thaiMonth(s.month))} · รวม ${fmtBaht(spent)} บาท</div>
+  ${expRows.length ? hBars(expRows, C.spend) : '<p class="empty">ยังไม่ได้บันทึกรายจ่ายเดือนนี้</p>'}
+</div>`;
+
+  const sellerRows = [...bySeller.entries()]
+    .map(([key, rows]) => ({ label: getSeller(key).label, value: rows.reduce((a, r) => a + r.total, 0) }))
+    .sort((a, b) => b.value - a.value);
+
+  const sellerPanel = sellerRows.length ? `<div class="panel">
+  <h2>รายรับแยกบริษัท</h2>
+  <div class="sub">${esc(thaiMonth(s.month))} · รวม ${fmtBaht(income)} บาท</div>
+  ${hBars(sellerRows, C.income)}
+</div>` : '';
+
+  const kpi = `<div class="kpi">
+  <div class="k"><div class="n">${openCount}</div><div class="t">งานค้าง</div></div>
+  <div class="k"><div class="n${lateCount ? ' warn' : ''}">${lateCount}</div><div class="t">เลยกำหนด</div></div>
+  <div class="k"><div class="n">${todayCount}</div><div class="t">ครบวันนี้</div></div>
+</div>
+<div class="kpi">
+  <div class="k"><div class="n">${stock?.count ?? 0}</div><div class="t">รายการสต๊อก</div></div>
+  <div class="k"><div class="n">${esc(fmtBaht(stock?.value || 0).split('.')[0])}</div><div class="t">มูลค่าสต๊อก</div></div>
+  <div class="k"><div class="n${stock?.negative ? ' warn' : ''}">${stock?.negative ?? 0}</div><div class="t">ยอดติดลบ</div></div>
+</div>`;
+
+  return `${hero}
+${trendPanel}
+${expPanel}
+${sellerPanel}
+${kpi}
+${blocks}
+${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><span>เอกสารที่ยกเลิก (ไม่นับในยอด)</span><b>${s.voidCount} ใบ</b></div></div>` : ''}`;
 }
 
-export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp }) {
+export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend }) {
   let body;
   if (tab === 'jobs') {
     body = jobs.length ? jobs.map((j) => jobCard(j, today)).join('\n') : '<p class="empty">ไม่มีงานค้าง 🎉</p>';
@@ -225,7 +267,7 @@ ${list}`;
       count: (stock || []).length,
       value: stockVal?.value || 0,
       negative: (stock || []).filter((r) => r.qty < 0).length,
-    });
+    }, trend);
   }
 
   const nav = TABS

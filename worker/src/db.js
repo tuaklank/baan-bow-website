@@ -313,6 +313,27 @@ export async function monthExpenses(db, ym) {
   return results;
 }
 
+/**
+ * รายรับ (เอกสารที่ออก) กับรายจ่าย รวมรายเดือน ตั้งแต่เดือน from เป็นต้นมา
+ * แยกเป็น 2 query เพราะคนละตารางคนละช่องวันที่ แล้วค่อยมาต่อกันในโค้ด
+ * ง่ายกว่า UNION และอ่านออกว่าเลขไหนมาจากไหน
+ */
+export async function monthlyTrend(db, from) {
+  const income = await db.prepare(`
+    SELECT substr(issue_date, 1, 7) AS ym, SUM(total) AS total
+    FROM documents WHERE status = 'issued' AND issue_date >= ?
+    GROUP BY ym
+  `).bind(from + '-01').all();
+
+  const spent = await db.prepare(`
+    SELECT substr(spent_date, 1, 7) AS ym, SUM(amount) AS total
+    FROM expenses WHERE spent_date >= ?
+    GROUP BY ym
+  `).bind(from + '-01').all();
+
+  return { income: income.results, spent: spent.results };
+}
+
 export async function jobExpenses(db, jobId) {
   const { results } = await db.prepare(
     'SELECT * FROM expenses WHERE job_id = ? ORDER BY id DESC',

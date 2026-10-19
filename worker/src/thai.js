@@ -41,6 +41,24 @@ export function thaiDateShort(ymd) {
   return `${d} ${MONTHS_ABBR[m - 1]} ${String((y + 543) % 100).padStart(2, '0')}`;
 }
 
+/** 2026-10 -> "ต.ค. 69" — ใช้ใต้แกนกราฟ ที่แคบกว่าจะเขียนชื่อเดือนเต็ม */
+export function thaiMonthShort(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTHS_ABBR[m - 1]} ${String((y + 543) % 100).padStart(2, '0')}`;
+}
+
+/** รายการเดือนย้อนหลัง n เดือนจนถึงเดือนนี้ เรียงเก่า -> ใหม่ เช่น ['2026-05', ..., '2026-10'] */
+export function lastMonths(ym, n) {
+  const [y, m] = ym.split('-').map(Number);
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    // Date รับเดือนเกินช่วง 0-11 แล้วทดปีให้เอง ข้ามปีจึงไม่ต้องคิดเอง
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
+
 /** 2026-10 -> "ตุลาคม 2569" */
 export function thaiMonth(ym) {
   const [y, m] = ym.split('-').map(Number);

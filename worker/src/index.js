@@ -7,11 +7,11 @@ import { handleText, morningDigest, eveningDigest } from './handlers.js';
 import { CRON_EVENING } from './config.js';
 import {
   docByToken, recentDocs, searchDocs, openJobs, monthSummary,
-  listStock, stockValue, recentExpenses, monthExpenses,
+  listStock, stockValue, recentExpenses, monthExpenses, monthlyTrend,
 } from './db.js';
 import { renderDoc } from './render.js';
 import { renderAdmin, TABS } from './admin.js';
-import { todayBkk, monthBkk } from './thai.js';
+import { todayBkk, monthBkk, lastMonths } from './thai.js';
 
 const html = (body, status = 200) => new Response(body, {
   status,
@@ -77,7 +77,10 @@ async function handleAdmin(url, env) {
   const needStock = tab === 'stock' || tab === 'summary';
   const needMonthExp = tab === 'expenses' || tab === 'summary';
 
-  const [jobs, docs, summary, stock, stockVal, expenses, monthExp] = await Promise.all([
+  // กราฟย้อนหลังครึ่งปี — พอเห็นแนวโน้ม แต่ยังไม่ล้นจอมือถือ
+  const months = lastMonths(ym, 6);
+
+  const [jobs, docs, summary, stock, stockVal, expenses, monthExp, raw] = await Promise.all([
     needJobs ? openJobs(env.DB) : [],
     tab === 'docs' ? (q ? searchDocs(env.DB, q, 50) : recentDocs(env.DB, 50)) : [],
     tab === 'summary' ? monthSummary(env.DB, ym) : null,
@@ -85,9 +88,16 @@ async function handleAdmin(url, env) {
     needStock ? stockValue(env.DB) : null,
     tab === 'expenses' ? recentExpenses(env.DB, 50) : [],
     needMonthExp ? monthExpenses(env.DB, ym) : [],
+    tab === 'summary' ? monthlyTrend(env.DB, months[0]) : null,
   ]);
 
-  return html(renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp }));
+  // เดือนที่ไม่มีรายการต้องมีแท่งเป็น 0 ไม่ใช่หายไปจากกราฟ ไม่งั้นแกนเวลาจะโกหก
+  const sum = (rows, m) => rows.find((r) => r.ym === m)?.total ?? 0;
+  const trend = raw
+    ? months.map((m) => ({ ym: m, income: sum(raw.income, m), spent: sum(raw.spent, m) }))
+    : [];
+
+  return html(renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend }));
 }
 
 export default {
