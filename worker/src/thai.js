@@ -18,6 +18,8 @@ export const monthBkk = (now = new Date()) => todayBkk(now).slice(0, 7);
  */
 export const isValidYmd = (s) =>
   typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+  // เดือน/วันเกินช่วง (2026-13-15) ได้ Invalid Date ซึ่ง toISOString จะ throw — เช็คก่อนเสมอ
+  !Number.isNaN(new Date(s + 'T00:00:00Z').getTime()) &&
   new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s &&
   Number(s.slice(0, 4)) >= 2000 && Number(s.slice(0, 4)) <= 2100;
 
@@ -25,6 +27,94 @@ export function addDays(ymd, n) {
   const d = new Date(ymd + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+
+// ---------- อ่านวันที่จากข้อความที่พิมพ์มา (ไม่เรียก AI) ----------
+
+// ชื่อเดือนแบบที่คนพิมพ์จริง เรียงตามเลขเดือน 1-12 ตัวยาวมาก่อนเพื่อให้จับตัวเต็มได้ก่อนตัวย่อ
+const MONTH_WORDS = [
+  ['มกราคม', 'มกรา', 'มค'],
+  ['กุมภาพันธ์', 'กุมภา', 'กพ'],
+  ['มีนาคม', 'มีนา', 'มีค'],
+  ['เมษายน', 'เมษา', 'เมย'],
+  ['พฤษภาคม', 'พฤษภา', 'พค'],
+  ['มิถุนายน', 'มิถุนา', 'มิย'],
+  ['กรกฎาคม', 'กรกฎา', 'กค'],
+  ['สิงหาคม', 'สิงหา', 'สค'],
+  ['กันยายน', 'กันยา', 'กย'],
+  ['ตุลาคม', 'ตุลา', 'ตค'],
+  ['พฤศจิกายน', 'พฤศจิกา', 'พย'],
+  ['ธันวาคม', 'ธันวา', 'ธค'],
+];
+
+const MONTH_RE = new RegExp('(' + MONTH_WORDS.flat().join('|') + ')');
+
+const monthOf = (word) => MONTH_WORDS.findIndex((ws) => ws.includes(word)) + 1;
+
+/**
+ * ปีที่คนพิมพ์ -> ปี ค.ศ.
+ * 2 หลัก = พ.ศ. ย่อ (69 -> 2569 -> 2026) ตรงกับเลขที่เอกสารที่ใช้ ddmmyy พ.ศ.
+ * 4 หลักตั้งแต่ 2400 ขึ้นไป = พ.ศ. เต็ม, น้อยกว่านั้น = ค.ศ. อยู่แล้ว
+ */
+function toAD(raw) {
+  const n = Number(raw);
+  if (raw.length <= 2) return 2500 + n - 543;
+  return n >= 2400 ? n - 543 : n;
+}
+
+const ymd = (y, m, d) =>
+  `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+/**
+ * ไม่ได้บอกปีมา = ปีนี้ แต่ถ้าได้วันที่ล่วงหน้าเกิน 60 วัน ให้ถอยไปปีก่อน
+ * เพราะ "ลงวันที่ 28/12" ที่พิมพ์ต้นเดือนมกราคม หมายถึงธันวาคมที่ผ่านมา ไม่ใช่สิ้นปีนี้
+ */
+function yearFor(today, m, d) {
+  const y = Number(today.slice(0, 4));
+  const guess = ymd(y, m, d);
+  return isValidYmd(guess) && guess > addDays(today, 60) ? y - 1 : y;
+}
+
+/**
+ * อ่านวันที่จากข้อความไทยที่พิมพ์มาตรงๆ — คืน YYYY-MM-DD ค.ศ. หรือ null ถ้าอ่านไม่ออก
+ * รับได้: วันนี้ / เมื่อวาน / พรุ่งนี้, 18/10, 18/10/69, 18-10-2569, 2026-10-18,
+ *         18 ต.ค., 18 ตุลาคม 2569
+ * ปี พ.ศ. ทั้งแบบ 2 และ 4 หลักแปลงเป็น ค.ศ. ให้เอง
+ */
+export function readThaiDate(text, today = todayBkk()) {
+  const s = String(text ?? '').replace(/[.\s]/g, '');
+
+  if (/วันนี้/.test(s)) return today;
+  if (/เมื่อวานซืน|วานซืน/.test(s)) return addDays(today, -2);
+  if (/เมื่อวาน|วานนี้/.test(s)) return addDays(today, -1);
+  if (/มะรืน/.test(s)) return addDays(today, 2);
+  if (/พรุ่งนี้/.test(s)) return addDays(today, 1);
+
+  // 2026-10-18 (ค.ศ. เต็มรูปแบบ) — ตรวจก่อน ไม่ให้ไปโดน d/m/y จับผิดลำดับ
+  const iso = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const out = ymd(toAD(iso[1]), Number(iso[2]), Number(iso[3]));
+    return isValidYmd(out) ? out : null;
+  }
+
+  // 18 ตุลาคม 2569 / 18ตค69
+  const words = s.match(new RegExp('(\\d{1,2})' + MONTH_RE.source + '(\\d{2,4})?'));
+  if (words) {
+    const y = words[3] ? toAD(words[3]) : yearFor(today, monthOf(words[2]), Number(words[1]));
+    const out = ymd(y, monthOf(words[2]), Number(words[1]));
+    return isValidYmd(out) ? out : null;
+  }
+
+  // 18/10, 18/10/69, 18-10-2569 — วัน/เดือน/ปี ตามที่คนไทยเขียน
+  const slash = s.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?/);
+  if (slash) {
+    const m = Number(slash[2]), d = Number(slash[1]);
+    const y = slash[3] ? toAD(slash[3]) : yearFor(today, m, d);
+    const out = ymd(y, m, d);
+    return isValidYmd(out) ? out : null;
+  }
+
+  return null;
 }
 
 export const dayOfWeek = (ymd) => new Date(ymd + 'T00:00:00Z').getUTCDay();

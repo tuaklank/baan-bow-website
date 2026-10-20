@@ -86,6 +86,10 @@ test('isValidYmd ปฏิเสธวันที่ที่ไม่มีจ
   assert.ok(!isValidYmd('18/10/2569'));
   assert.ok(!isValidYmd('2569-10-18'));
   assert.ok(!isValidYmd(null));
+  // เดือน/วันเกินช่วง ต้องคืน false เฉยๆ ห้าม throw (เคยพังตอนได้ค่านี้มาจาก AI)
+  assert.ok(!isValidYmd('2026-13-15'));
+  assert.ok(!isValidYmd('2026-00-10'));
+  assert.ok(!isValidYmd('2026-10-32'));
 });
 
 test('todayBkk ใช้เวลาไทย ไม่ใช่เวลาเครื่อง', () => {

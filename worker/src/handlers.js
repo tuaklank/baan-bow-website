@@ -10,13 +10,16 @@ import { parseCommand } from './ai.js';
 import {
   findCustomer, mergeCustomer, issueDocument, docByNo, voidDocument, searchDocs, monthSummary,
   createJob, jobById, jobByDocNo, findJobs, updateJob, addJobEvent, openJobs,
-  savePending, takePending, clearPending, addHoliday, holidayOn,
+  savePending, takePending, peekPending, clearPending, addHoliday, holidayOn,
   findProduct, productKey, upsertProduct, receiveStock, listStock, stockOf,
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
-import { todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, thaiDate, thaiMonth, fmtBaht } from './thai.js';
+import {
+  todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
+  thaiDate, thaiMonth, fmtBaht,
+} from './thai.js';
 
 const QT_VALID_DAYS = 30;   // ใบเสนอราคายืนราคา 30 วัน (ตรงกับแม่แบบ)
 
@@ -26,6 +29,8 @@ export const HELP = `คำสั่งที่ใช้ได้
 • ทำใบเสนอราคา คุณสมชาย 081-234-5678 ติดตั้งโบว์ 4 ชุด ชุดละ 2900 ส่วนลด 500 ไม่รวม vat
 • ออกใบกำกับภาษีจาก QT181069001
 • ยกเลิก RC181069003
+• ...ลงวันที่ 15/10      (ไม่บอกวันที่ = ลงวันนี้ บอกมาก็ลงวันนั้น ย้อนหลังได้)
+• วันที่ 15/10           (แก้วันที่ของร่างที่รอยืนยันอยู่ ก่อนพิมพ์ "ยืนยัน")
 
 🔎 ค้นหา / สรุป
 • หา QT181069001  หรือ  หา โตโยต้าพัทยา
@@ -97,6 +102,18 @@ export function checkCustomer(customer, type) {
   return null;
 }
 
+/**
+ * วันที่ที่จะลงในเอกสาร — ผู้ใช้ไม่ได้บอกมา (หรือบอกมาแบบที่อ่านไม่ออก) ใช้วันนี้
+ * ไม่ล้มคำสั่งทิ้งเมื่ออ่านวันที่ไม่ออก เพราะร่างยังแก้วันที่ได้ก่อนยืนยัน
+ */
+const pickIssueDate = (cmd) => (isValidYmd(cmd?.issue_date) ? cmd.issue_date : todayBkk());
+
+/** ป้ายต่อท้ายวันที่ในใบร่าง ให้เห็นว่าไม่ใช่วันนี้ */
+function issueDateTag(ymd, today = todayBkk()) {
+  if (ymd === today) return '';
+  return ymd < today ? ' ⚠️ ย้อนหลัง' : ' ⚠️ ล่วงหน้า';
+}
+
 /** เตือนเมื่อกำหนดส่งตรงวันหยุดหรือเสาร์-อาทิตย์ */
 async function dateWarn(db, ymd) {
   const h = await holidayOn(db, ymd);
@@ -116,7 +133,8 @@ function docSummary(d) {
     d.customer.tax_id
       ? `เลขภาษี: ${d.customer.tax_id}${d.customer.branch ? ` (${d.customer.branch})` : ''}`
       : (TYPES[d.type].tax ? '⚠️ ไม่มีเลขภาษีลูกค้า' : null),
-    `วันที่: ${thaiDate(d.issue_date, true)}`,
+    // ย้อนหลัง/ล่วงหน้าต้องเห็นชัดก่อนยืนยัน เพราะวันที่นี้ไปอยู่ในเลขที่เอกสารด้วย แก้ทีหลังไม่ได้
+    `วันที่: ${thaiDate(d.issue_date, true)}${issueDateTag(d.issue_date)}`,
     d.ref_doc_no ? `อ้างอิง: ${d.ref_doc_no}` : null,
     '',
     lines,
@@ -126,7 +144,7 @@ function docSummary(d) {
     `รวมทั้งสิ้น ${fmtBaht(d.total)} บาท`,
     d.wht_rate ? `หัก ณ ที่จ่าย ${d.wht_rate / 100}% −${fmtBaht(d.wht)}\nยอดชำระสุทธิ ${fmtBaht(d.net_payable)} บาท` : null,
     '',
-    'พิมพ์ "ยืนยัน" เพื่อออกเอกสาร หรือ "ยกเลิก" เพื่อทิ้งรายการนี้',
+    'พิมพ์ "ยืนยัน" เพื่อออกเอกสาร / "วันที่ 15/10" เพื่อแก้วันที่ / "ยกเลิก" เพื่อทิ้งรายการนี้',
   ];
   return parts.filter((x) => x !== null).join('\n');
 }
@@ -180,7 +198,8 @@ async function doCreateDoc(env, uid, cmd) {
 
   const base = {
     type, seller: seller.key, customer, items: cmd.items, discount: cmd.discount || 0, wht_rate,
-    note: cmd.note, payment_terms: cmd.payment_terms, ref_doc_no: null, issue_date: todayBkk(),
+    note: cmd.note, payment_terms: cmd.payment_terms, ref_doc_no: null,
+    issue_date: pickIssueDate(cmd),
   };
 
   // VAT: ไม่ระบุ = ถามกลับ ห้ามเดา  /  TI กับ RT บังคับมี VAT จะตอบ "ไม่มี vat" ไม่ได้
@@ -223,7 +242,8 @@ async function doConvertDoc(env, uid, cmd) {
     note: cmd.note ?? src.note,
     payment_terms: null,
     ref_doc_no: src.doc_no,
-    issue_date: todayBkk(),
+    // ใบใหม่ลงวันที่ที่ผู้ใช้บอกมา ไม่บอกก็วันนี้ — ไม่ใช่วันที่ของใบต้นทาง
+    issue_date: pickIssueDate(cmd),
   };
 
   // เอกสารต้นทางไม่ได้คิด VAT แต่ปลายทางเป็นเอกสารภาษี -> ต้องถามก่อน ห้ามเดาให้
@@ -236,6 +256,37 @@ async function doConvertDoc(env, uid, cmd) {
   const draft = buildDraft({ ...base, vat_mode });
   await savePending(db, uid, { kind: 'doc', doc: draft });
   return docSummary(draft);
+}
+
+/**
+ * "วันที่ 15/10" ตอนมีร่างเอกสารรออยู่ = แก้วันที่ของร่างนั้นแล้วแสดงใบร่างใหม่
+ * อ่านวันที่จากข้อความตรงๆ ไม่เรียก AI เหมือนคำตอบเรื่อง VAT — ถูกกว่าและไม่มีโอกาสเดาผิด
+ * คืน null ถ้าไม่มีร่างรออยู่ เพื่อปล่อยข้อความนั้นไปเข้าทางปกติต่อ
+ */
+async function doSetIssueDate(env, uid, msg) {
+  const db = env.DB;
+  const p = await peekPending(db, uid);
+  if (p?.kind !== 'doc' && p?.kind !== 'need_vat') return null;
+
+  const date = readThaiDate(msg);
+  if (!date) {
+    return 'อ่านวันที่ไม่ออกครับ พิมพ์ได้แบบนี้\n'
+      + '• วันที่ 15/10\n• วันที่ 15/10/2569\n• วันที่ 15 ต.ค.\n• วันที่ เมื่อวาน';
+  }
+
+  if (p.kind === 'need_vat') {
+    await savePending(db, uid, { ...p, base: { ...p.base, issue_date: date } });
+    return `ลงวันที่ ${thaiDate(date, true)}${issueDateTag(date)} ให้แล้ว\n\n` + askVat(TYPES[p.base.type].tax);
+  }
+
+  // ยอดเงินไม่ขึ้นกับวันที่ จึงแก้แค่สองช่องนี้ (ใบเสนอราคายืนราคานับจากวันที่ออก)
+  const doc = {
+    ...p.doc,
+    issue_date: date,
+    valid_until: p.doc.type === 'quotation' ? addDays(date, QT_VALID_DAYS) : null,
+  };
+  await savePending(db, uid, { kind: 'doc', doc });
+  return docSummary(doc);
 }
 
 async function doVoidDoc(env, uid, cmd) {
@@ -889,6 +940,12 @@ export async function handleText(env, uid, text) {
       return docSummary(draft);
     }
     if (p) await savePending(db, uid, p);   // ไม่ได้รออยู่ ก็คืนรายการเดิมกลับไป
+  }
+
+  // ขอแก้วันที่ของร่างที่รออยู่ — อ่านจากข้อความตรงๆ ไม่ต้องเรียก AI เหมือนกัน
+  if (/^(วันที่|ลงวันที่|แก้วันที่|เปลี่ยนวันที่|ย้อนวันที่|ใช้วันที่)/.test(msg)) {
+    const answer = await doSetIssueDate(env, uid, msg);
+    if (answer) return answer;
   }
 
   // เลขที่เอกสารโดดๆ = ขอดูเอกสารนั้น

@@ -12,7 +12,7 @@ export const SCHEMA = {
   additionalProperties: false,
   required: [
     'intent', 'doc_type', 'seller', 'customer', 'items', 'discount', 'vat_mode', 'wht_percent',
-    'payment_terms', 'note', 'from_doc_no', 'doc_no', 'query', 'job', 'holiday',
+    'issue_date', 'payment_terms', 'note', 'from_doc_no', 'doc_no', 'query', 'job', 'holiday',
     'stock', 'expense',
   ],
   properties: {
@@ -66,6 +66,10 @@ export const SCHEMA = {
     discount:      { type: 'number', description: 'ส่วนลดเป็นบาท ไม่มีให้ใส่ 0' },
     vat_mode:      { type: 'string', description: 'none | exclusive | inclusive หรือ "" ถ้าผู้ใช้ไม่พูดถึง VAT' },
     wht_percent:   { type: 'number', description: 'หัก ณ ที่จ่าย 1 หรือ 3 ไม่มีให้ใส่ 0' },
+    issue_date: {
+      type: 'string',
+      description: 'วันที่ที่จะลงในเอกสาร YYYY-MM-DD ค.ศ. หรือ "" ถ้าผู้ใช้ไม่ระบุ (ระบบใช้วันนี้)',
+    },
     payment_terms: { type: 'string' },
     note:          { type: 'string' },
     from_doc_no:   { type: 'string', description: 'เลขที่เอกสารต้นทาง ตอนออกเอกสารต่อจากใบเดิม' },
@@ -123,7 +127,7 @@ export const EMPTY = {
   intent: 'unknown', doc_type: null, seller: null,
   customer: { name: null, address: null, tax_id: null, branch: null, contact: null, phone: null },
   items: [], discount: 0, vat_mode: null, wht_percent: null,
-  payment_terms: null, note: null, from_doc_no: null, doc_no: null, query: null,
+  issue_date: null, payment_terms: null, note: null, from_doc_no: null, doc_no: null, query: null,
   job: { ref: null, title: null, due_date: null, status: null, note: null },
   holiday: { date: null, name: null },
   stock: { name: null, qty: 0, unit_cost: null, price: null, note: null },
@@ -163,6 +167,7 @@ function normalize(raw) {
     discount: num(raw.discount),
     vat_mode: str(raw.vat_mode),
     wht_percent: num(raw.wht_percent) || null,
+    issue_date: str(raw.issue_date),
     payment_terms: str(raw.payment_terms),
     note: str(raw.note),
     from_doc_no: str(raw.from_doc_no),
@@ -267,7 +272,14 @@ VAT (สำคัญ ห้ามเดา)
 - ผู้ใช้ไม่พูดถึง VAT เลย = "" (ระบบจะถามกลับเอง ห้ามใส่ค่าให้)
 
 หัก ณ ที่จ่าย
-- พูดถึงหัก ณ ที่จ่าย 1% = wht_percent 1, 3% = 3, ไม่พูดถึง = 0`;
+- พูดถึงหัก ณ ที่จ่าย 1% = wht_percent 1, 3% = 3, ไม่พูดถึง = 0
+
+วันที่ที่จะลงในเอกสาร (ช่อง issue_date — ใช้กับ create_doc และ convert_doc)
+- ผู้ใช้บอกวันที่ของเอกสารมา เช่น "ลงวันที่ 15/10" "ย้อนวันที่ 1 ต.ค." "วันที่ 28 ก.ย. 2569"
+  "ออกใบเสร็จย้อนหลังเมื่อวาน" = ใส่ issue_date เป็น YYYY-MM-DD ค.ศ.
+- ปี พ.ศ. ให้ลบ 543 ก่อน, ไม่บอกปีมาให้ใช้ปีปัจจุบัน (ถ้าได้วันล่วงหน้าไกลเกินไปให้ใช้ปีก่อน)
+- ไม่พูดถึงวันที่เลย = "" (ระบบจะลงวันนี้ให้เอง ห้ามเดา)
+- อย่าสับสนกับ job.due_date ที่เป็นกำหนดส่งงาน — issue_date คือวันที่หน้าเอกสารเท่านั้น`;
 }
 
 /** คืน object ตาม EMPTY เสมอ; ถ้าเรียก AI ไม่สำเร็จจะมี failed เป็นข้อความ error */
