@@ -88,7 +88,20 @@ export function renderDoc(row) {
       : '',
   ].filter(Boolean).join('\n');
 
-  // บล็อกหมายเหตุ: QT โชว์เงื่อนไข, RC/RT โชว์ช่องรับชำระ — ตรงกับ data-only ของแม่แบบ
+  /**
+   * ช่องทางโอนเงิน (QR + เลขบัญชี) อยู่บนใบเสนอราคาใบเดียว เพราะเป็นใบที่ยังต้องเก็บเงิน
+   * ใบเสร็จ (RC/RT) รับเงินมาแล้ว ส่วนใบกำกับภาษี (TI) ออกคู่กับใบเสร็จหรือออกตามหลัง
+   * ทั้งสามใบจึงไม่ต้องบอกลูกค้าว่าโอนที่ไหน — มีเลขบัญชีอยู่ทำให้เข้าใจผิดว่ายังค้างจ่าย
+   */
+  const payBlock = row.type !== 'quotation' ? '' : `      <div class="pay">
+        <img src="data:image/png;base64,${QR_PNG}" alt="KBank" style="width:30mm;height:auto;border-radius:6px;flex:none">
+        <div>
+          <h4>ช่องทางชำระเงิน / Payment</h4>
+          ${esc(PAYMENT.bank)}<br>เลขที่บัญชี <b>${esc(PAYMENT.bank_account)}</b><br>ชื่อบัญชี ${esc(PAYMENT.bank_account_name)}
+        </div>
+      </div>`;
+
+  // บล็อกหมายเหตุ: QT โชว์เงื่อนไข — ตรงกับ data-only ของแม่แบบ
   const noteBlock = row.type === 'quotation'
     ? `      <div class="note">
         <h4>เงื่อนไข / Terms</h4>
@@ -97,12 +110,7 @@ export function renderDoc(row) {
           <li>ชำระเต็มจำนวน หรือมัดจำ 50% ก่อนผลิต ส่วนที่เหลือชำระในวันที่สินค้าเสร็จ</li>
         </ul>
       </div>`
-    : (row.type === 'receipt' || row.type === 'receipt_tax_invoice')
-      ? `      <div class="note">
-        <h4>การชำระเงิน / Payment received</h4>
-        ☐ เงินสด &nbsp; ☑ โอนเงิน กสิกรไทย &nbsp; วันที่ ${thaiSlash(row.issue_date)}
-      </div>`
-      : '';
+    : '';
 
   const termsLine = row.payment_terms
     ? `      <div class="note"><h4>เงื่อนไขการชำระเงิน / Payment terms</h4>${esc(row.payment_terms)}</div>`
@@ -191,13 +199,7 @@ ${fillRows}
   <div class="bottom">
     <div>
       <div class="words">(${esc(bahtText(row.total))})<small>${esc(bahtTextEn(row.total))}</small></div>
-      <div class="pay">
-        <img src="data:image/png;base64,${QR_PNG}" alt="KBank" style="width:30mm;height:auto;border-radius:6px;flex:none">
-        <div>
-          <h4>ช่องทางชำระเงิน / Payment</h4>
-          ${esc(PAYMENT.bank)}<br>เลขที่บัญชี <b>${esc(PAYMENT.bank_account)}</b><br>ชื่อบัญชี ${esc(PAYMENT.bank_account_name)}
-        </div>
-      </div>
+${payBlock}
 ${noteBlock}
 ${termsLine}
 ${memoLine}
