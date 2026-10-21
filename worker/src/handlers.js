@@ -21,7 +21,7 @@ import {
   thaiDate, thaiMonth, fmtBaht,
 } from './thai.js';
 
-const QT_VALID_DAYS = 30;   // ใบเสนอราคายืนราคา 30 วัน (ตรงกับแม่แบบ)
+const QT_VALID_DAYS = 15;   // ใบเสนอราคายืนราคา 15 วันนับจากวันที่ออก
 
 export const HELP = `คำสั่งที่ใช้ได้
 
