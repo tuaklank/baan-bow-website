@@ -3,11 +3,13 @@
 //   GET  /d/:token  เอกสาร A4
 //   GET  /admin     หลังบ้านมือถือ (กั้นด้วย Cloudflare Access)
 import { verifySignature, reply, push } from './line.js';
-import { handleText, morningDigest, eveningDigest } from './handlers.js';
-import { CRON_EVENING } from './config.js';
+import { handleText, morningDigest, eveningDigest, leadCard } from './handlers.js';
+import { CRON_EVENING, CRON_LEADS } from './config.js';
+import { huntLead } from './leads.js';
 import {
   docByToken, recentDocs, searchDocs, openJobs, monthSummary,
   listStock, stockValue, recentExpenses, monthExpenses, monthlyTrend,
+  recentLeads, monthLeads,
 } from './db.js';
 import { renderDoc } from './render.js';
 import { renderAdmin, TABS } from './admin.js';
@@ -80,7 +82,7 @@ async function handleAdmin(url, env) {
   // กราฟย้อนหลังครึ่งปี — พอเห็นแนวโน้ม แต่ยังไม่ล้นจอมือถือ
   const months = lastMonths(ym, 6);
 
-  const [jobs, docs, summary, stock, stockVal, expenses, monthExp, raw] = await Promise.all([
+  const [jobs, docs, summary, stock, stockVal, expenses, monthExp, raw, leads, monthLead] = await Promise.all([
     needJobs ? openJobs(env.DB) : [],
     tab === 'docs' ? (q ? searchDocs(env.DB, q, 50) : recentDocs(env.DB, 50)) : [],
     tab === 'summary' ? monthSummary(env.DB, ym) : null,
@@ -89,6 +91,8 @@ async function handleAdmin(url, env) {
     tab === 'expenses' ? recentExpenses(env.DB, 50) : [],
     needMonthExp ? monthExpenses(env.DB, ym) : [],
     tab === 'summary' ? monthlyTrend(env.DB, months[0]) : null,
+    tab === 'leads' ? recentLeads(env.DB, { limit: 50 }) : [],
+    tab === 'leads' ? monthLeads(env.DB, ym) : [],
   ]);
 
   // เดือนที่ไม่มีรายการต้องมีแท่งเป็น 0 ไม่ใช่หายไปจากกราฟ ไม่งั้นแกนเวลาจะโกหก
@@ -97,7 +101,29 @@ async function handleAdmin(url, env) {
     ? months.map((m) => ({ ym: m, income: sum(raw.income, m), spent: sum(raw.spent, m) }))
     : [];
 
-  return html(renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend }));
+  return html(renderAdmin({
+    tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend, leads, monthLead,
+  }));
+}
+
+/**
+ * รอบหาลูกค้ามุ่งหวัง 09:00 น. — ไม่เจอก็เงียบ ไม่ต้องรายงานว่าวันนี้ไม่เจอ
+ * ข้อความ "วันนี้ไม่เจอ" ทุกเช้าจะกลายเป็นสิ่งที่เจ้าของร้านเลิกอ่านภายในสัปดาห์เดียว
+ * ความผิดพลาดจากการเรียก AI ก็เงียบเหมือนกัน แต่เขียนลง log ไว้ให้ตามด้วย wrangler tail ได้
+ */
+async function leadDigest(env) {
+  if (!env.ANTHROPIC_API_KEY) return null;
+  try {
+    const { lead, skipped } = await huntLead(env);
+    if (!lead) {
+      console.log('หาลูกค้ามุ่งหวังไม่ได้: ' + skipped);
+      return null;
+    }
+    return '🔎 ' + leadCard(lead, env.BASE_URL || '');
+  } catch (e) {
+    console.error('leadDigest', e);
+    return null;
+  }
 }
 
 export default {
@@ -129,7 +155,9 @@ export default {
     ctx.waitUntil((async () => {
       const msg = event.cron === CRON_EVENING
         ? await eveningDigest(env)
-        : await morningDigest(env);
+        : event.cron === CRON_LEADS
+          ? await leadDigest(env)
+          : await morningDigest(env);
       if (!msg) return;   // ไม่มีงานค้างก็ไม่ต้องรบกวน
       const allowed = (env.ALLOWED_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
       for (const uid of allowed) await push(env, uid, msg);

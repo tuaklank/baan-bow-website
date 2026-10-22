@@ -1,6 +1,6 @@
 // หน้าหลังบ้านสำหรับมือถือ — 5 แท็บ งาน / เอกสาร / สต๊อก / รายจ่าย / สรุป
 // ไม่มีระบบ login ในนี้ ตั้งใจให้ Cloudflare Access กั้นหน้า /admin จากข้างนอก
-import { TYPES, EXPENSE_CATEGORIES, getSeller, splitIncome, roleOf } from './config.js';
+import { TYPES, EXPENSE_CATEGORIES, LEAD_STATUSES, getSeller, splitIncome, roleOf } from './config.js';
 import { thaiDateShort, thaiDate, thaiMonth, thaiMonthShort, fmtBaht } from './thai.js';
 import { esc } from './render.js';
 import { C, CHART_CSS, monthlyBars, hBars, legend, signed } from './chart.js';
@@ -64,8 +64,10 @@ details.nums th{font-weight:500;color:var(--mute)}
 details.nums td{font-variant-numeric:tabular-nums}
 ${CHART_CSS}`;
 
-export const TABS = ['jobs', 'docs', 'stock', 'expenses', 'summary'];
-const TAB_LABEL = { jobs: 'งาน', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', summary: 'สรุป' };
+export const TABS = ['jobs', 'docs', 'stock', 'expenses', 'leads', 'summary'];
+const TAB_LABEL = {
+  jobs: 'งาน', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', leads: 'มุ่งหวัง', summary: 'สรุป',
+};
 
 const statusClass = (s) => (s === 'กำลังทำ' ? 'doing' : s === 'รอลูกค้า' ? 'waiting' : '');
 
@@ -106,6 +108,60 @@ function stockCard(p) {
     neg ? '<span class="tag late">ติดลบ</span>' : zero ? '<span class="tag">หมด</span>' : ''
   }</div>
 </div>`;
+}
+
+/**
+ * การ์ดลูกค้ามุ่งหวัง — จุดสำคัญคือช่องติดต่อทุกช่องเป็นลิงก์ไปหน้าต้นทางได้
+ * ถ้าเบอร์โทรบนจอไม่มีที่มาให้กดดู มันก็คือเบอร์ที่เชื่อไม่ได้
+ */
+function leadCardHtml(l) {
+  const why = JSON.parse(l.why || '[]');
+  const src = JSON.parse(l.sources || '{}');
+  const st = LEAD_STATUSES[l.status];
+  const cls = l.status === 'won' ? 'doing' : l.status === 'dropped' ? '' : l.status === 'new' ? 'today' : 'waiting';
+
+  // ค่าที่มีที่มาแสดงเป็นลิงก์ ค่าที่ไม่มีแสดงเป็นข้อความเฉยๆ (ตอนนี้ยังไม่มีทางเกิด แต่กันไว้)
+  const field = (key, label, text) => {
+    if (!text) return '';
+    const url = src[key];
+    return url
+      ? `<div><span style="color:var(--mute)">${label}</span> <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a></div>`
+      : `<div><span style="color:var(--mute)">${label}</span> ${esc(text)}</div>`;
+  };
+
+  return `<div class="card">
+  <div class="row"><h3>#${l.id} ${esc(l.name)}</h3><span class="tag ${cls}">${esc(st?.th ?? l.status)}</span></div>
+  <div class="meta">${[l.category, l.province].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}
+    <span>ความน่าคุย ${l.fit + l.reach + l.timing}/15</span><span>${thaiDateShort(l.found_date)}</span></div>
+  ${why.length ? `<ul style="margin:8px 0 0 16px;font-size:12.5px;line-height:1.6">${why.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+  <div style="margin-top:8px;font-size:12.5px;line-height:1.7">
+    ${field('phone', 'โทร', l.phone)}
+    ${field('facebook', 'เพจ', l.facebook)}
+    ${field('website', 'เว็บ', l.website)}
+    ${l.line_id ? field('line_id', 'ไลน์', l.line_id) : '<div style="color:var(--mute)">ไม่พบไลน์สาธารณะ</div>'}
+  </div>
+  ${l.draft ? `<div style="margin-top:8px;background:var(--soft);border-left:3px solid var(--gold);padding:8px 10px;font-size:12.5px;line-height:1.6">${esc(l.draft)}</div>` : ''}
+  ${l.status_note ? `<div class="meta" style="margin-top:6px"><span>เหตุผล: ${esc(l.status_note)}</span></div>` : ''}
+</div>`;
+}
+
+function leadsView(rows, monthly) {
+  const n = (s) => monthly.find((r) => r.status === s)?.cnt ?? 0;
+  const total = monthly.reduce((a, r) => a + r.cnt, 0);
+  const head = `<div class="sum">
+  <h2>เดือนนี้</h2>
+  <div class="line"><span>ระบบหามาให้</span><b>${total} เจ้า</b></div>
+  <div class="line"><span>คุณกดสนใจ</span><b>${n('interested') + n('contacted') + n('replied') + n('won')} เจ้า</b></div>
+  <div class="line"><span>ติดต่อไปแล้ว</span><b>${n('contacted') + n('replied') + n('won')} เจ้า</b></div>
+  <div class="line"><span>เขาตอบกลับ</span><b>${n('replied') + n('won')} เจ้า</b></div>
+  <div class="line"><span>ปิดการขายได้</span><b>${n('won')} เจ้า</b></div>
+</div>`;
+
+  if (!rows.length) {
+    return head + '<p class="empty">ยังไม่มีลูกค้ามุ่งหวัง<br>ระบบจะหามาให้ทุกเช้า 09:00 น. วันละเจ้า</p>';
+  }
+  return head + rows.map(leadCardHtml).join('\n')
+    + '<p class="empty" style="font-size:12.5px">ตอบสถานะทางไลน์ได้เลย เช่น "สนใจ 12" หรือ "ไม่สนใจ 12 ร้านเล็กเกินไป"</p>';
 }
 
 function stockView(rows, value) {
@@ -265,7 +321,7 @@ ${blocks}
 ${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><span>เอกสารที่ยกเลิก (ไม่นับในยอด)</span><b>${s.voidCount} ใบ</b></div></div>` : ''}`;
 }
 
-export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend }) {
+export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend, leads, monthLead }) {
   let body;
   if (tab === 'jobs') {
     body = jobs.length ? jobs.map((j) => jobCard(j, today)).join('\n') : '<p class="empty">ไม่มีงานค้าง 🎉</p>';
@@ -283,6 +339,8 @@ ${list}`;
     body = stockView(stock || [], stockVal);
   } else if (tab === 'expenses') {
     body = expensesView(expenses || [], monthExp || []);
+  } else if (tab === 'leads') {
+    body = leadsView(leads || [], monthLead || []);
   } else {
     const late = jobs.filter((j) => j.due_date && j.due_date < today).length;
     const due = jobs.filter((j) => j.due_date === today).length;

@@ -9,10 +9,11 @@ compatibility_flags = ["nodejs_compat"]
 
 # เวลาไทย = UTC+7 (Cloudflare รับ cron เป็น UTC เท่านั้น)
 #   01:00 UTC = 08:00 น. ไทย — วางแผนงานวันนี้
+#   02:00 UTC = 09:00 น. ไทย — ลูกค้ามุ่งหวังวันละเจ้า
 #   10:00 UTC = 17:00 น. ไทย — ทวงงานค้างก่อนเลิกงาน
-# แก้เวลาแล้วต้องแก้ CRON_MORNING / CRON_EVENING ใน src/config.js ให้ตรงกันด้วย
+# แก้เวลาแล้วต้องแก้ CRON_MORNING / CRON_LEADS / CRON_EVENING ใน src/config.js ให้ตรงกันด้วย
 [triggers]
-crons = ["0 1 * * *", "0 10 * * *"]
+crons = ["0 1 * * *", "0 2 * * *", "0 10 * * *"]
 
 [vars]
 CLAUDE_MODEL = "claude-sonnet-5-5"

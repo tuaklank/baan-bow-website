@@ -384,6 +384,100 @@ export async function stockMovesOfJob(db, jobId) {
   return results;
 }
 
+// ---------- ลูกค้ามุ่งหวัง ----------
+
+/**
+ * บันทึกเจ้าที่หามาได้ — ชนชื่อเดิมคือไม่บันทึก ไม่เขียนทับ
+ * เพราะแถวเดิมมีสถานะที่เรากดไว้แล้ว ทับเมื่อไหร่ประวัติการตามงานหายทันที
+ * คืน null ถ้าซ้ำ ให้ฝั่งที่เรียกไปหาเจ้าใหม่ต่อ
+ */
+export async function insertLead(db, l) {
+  const key = customerKey(l.name);
+  const res = await db.prepare(`
+    INSERT OR IGNORE INTO leads
+      (found_date, name, name_key, category, province, phone, website, facebook, line_id,
+       why, sources, fit, reach, timing, draft)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    l.found_date, l.name, key, l.category ?? null, l.province ?? null,
+    l.phone ?? null, l.website ?? null, l.facebook ?? null, l.line_id ?? null,
+    JSON.stringify(l.why ?? []), JSON.stringify(l.sources ?? {}),
+    l.fit ?? 0, l.reach ?? 0, l.timing ?? 0, l.draft ?? null,
+  ).run();
+  if (!res.meta.changes) return null;
+  return leadById(db, res.meta.last_row_id);
+}
+
+export const leadById = (db, id) => db.prepare('SELECT * FROM leads WHERE id = ?').bind(id).first();
+
+/** เคยเจอเจ้านี้แล้วหรือยัง — นับทั้งที่เป็นลูกค้าอยู่แล้วและที่เคยเสนอไป */
+export async function knownNames(db) {
+  const a = await db.prepare('SELECT name_key FROM customers').all();
+  const b = await db.prepare('SELECT name_key FROM leads').all();
+  return [...a.results, ...b.results].map((r) => r.name_key);
+}
+
+export async function setLeadStatus(db, id, status, note) {
+  const res = await db.prepare(`
+    UPDATE leads SET status = ?, status_note = COALESCE(?, status_note), updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(status, note ?? null, id).run();
+  return res.meta.changes > 0 ? leadById(db, id) : null;
+}
+
+export async function recentLeads(db, { status = null, limit = 50 } = {}) {
+  const sql = `SELECT * FROM leads ${status ? 'WHERE status = ?' : ''} ORDER BY id DESC LIMIT ?`;
+  const stmt = status ? db.prepare(sql).bind(status, limit) : db.prepare(sql).bind(limit);
+  const { results } = await stmt.all();
+  return results;
+}
+
+/** สรุปของเดือน (YYYY-MM) แยกตามสถานะ — คู่กับ monthSummary ฝั่งเอกสาร */
+export async function monthLeads(db, ym) {
+  const { results } = await db.prepare(
+    'SELECT status, COUNT(*) AS cnt FROM leads WHERE found_date LIKE ? GROUP BY status',
+  ).bind(ym + '%').all();
+  return results;
+}
+
+/**
+ * ลูกค้าที่จ่ายเงินจริง แยกตามจังหวัด พร้อมยอดรวม — ใช้เป็นโจทย์ให้ AI ไปหาเจ้าที่หน้าตาคล้ายกัน
+ * นับเฉพาะเอกสารที่เป็นรายรับจริง (ดู INCOME_TYPE_SQL) ใบเสนอราคาไม่นับ เพราะยังไม่ได้เงิน
+ */
+export async function payingCustomers(db, limit = 15) {
+  const { results } = await db.prepare(`
+    SELECT json_extract(d.customer, '$.name') AS name,
+           json_extract(d.customer, '$.address') AS address,
+           COUNT(*) AS bills, SUM(d.total) AS total
+    FROM documents d
+    WHERE d.status = 'issued' AND d.type IN (${INCOME_TYPE_SQL})
+    GROUP BY name
+    ORDER BY total DESC
+    LIMIT ?
+  `).bind(limit).all();
+  return results;
+}
+
+/** รายการที่เคยกดไม่สนใจพร้อมเหตุผล — ป้อนกลับเข้ารอบถัดไป ไม่ให้หาแบบเดิมซ้ำ */
+export async function droppedReasons(db, limit = 15) {
+  const { results } = await db.prepare(`
+    SELECT name, category, status_note FROM leads
+    WHERE status = 'dropped' AND status_note IS NOT NULL
+    ORDER BY id DESC LIMIT ?
+  `).bind(limit).all();
+  return results;
+}
+
+/** เจ้าที่ไปได้สวย (สนใจขึ้นไป) — บอก AI ว่าแบบไหนที่เจ้าของร้านเลือกจริง */
+export async function workingLeads(db, limit = 15) {
+  const { results } = await db.prepare(`
+    SELECT name, category, province, why FROM leads
+    WHERE status IN ('interested','contacted','replied','won')
+    ORDER BY id DESC LIMIT ?
+  `).bind(limit).all();
+  return results;
+}
+
 /** จับคู่ชื่อรายการในเอกสารกับสินค้าในสต๊อก — คืนเฉพาะตัวที่เจอ */
 export async function productsByKeys(db, keys) {
   if (!keys.length) return [];

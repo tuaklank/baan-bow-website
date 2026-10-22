@@ -2,7 +2,7 @@
 import {
   TYPES, SELLERS, JOB_STATUSES, JOB_DEFAULT_DUE_DAYS, WHT_ALLOWED_BP,
   STOCK_ALLOW_NEGATIVE, EXPENSE_CATEGORIES, getSeller, sellerCanIssue,
-  splitIncome, roleOf,
+  splitIncome, roleOf, LEAD_STATUSES, LEAD_WORD_TO_STATUS,
 } from './config.js';
 import { compute, toSatang } from './money.js';
 import { parseDocNo } from './numbering.js';
@@ -11,6 +11,7 @@ import {
   findCustomer, mergeCustomer, issueDocument, docByNo, voidDocument, searchDocs, monthSummary,
   createJob, jobById, jobByDocNo, findJobs, updateJob, addJobEvent, openJobs,
   savePending, takePending, peekPending, clearPending, addHoliday, holidayOn,
+  setLeadStatus, recentLeads,
   findProduct, productKey, upsertProduct, receiveStock, listStock, stockOf,
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
@@ -53,6 +54,12 @@ export const HELP = `คำสั่งที่ใช้ได้
 • ค่าส่ง 60 Kerry   /   ค่าแรง 300 พี่หน่อย   /   ค่าเช่า 3500
 • ยกเลิกรายจ่าย 12               (ลงผิด — ยกเลิก ไม่ลบ ประวัติยังอยู่)
 • แก้รายจ่าย 12 ค่าส่ง 80         (ยกเลิกของเดิมแล้วลงใหม่ ไม่ทับของเดิม)
+
+🔎 ลูกค้ามุ่งหวัง (ระบบหามาให้ทุกเช้า 09:00 น. วันละเจ้า)
+• มุ่งหวัง                        (ดูรายการล่าสุด)
+• สนใจ 12                        (น่าทัก เก็บไว้ตามต่อ)
+• ไม่สนใจ 12 ร้านเล็กเกินไป      (บอกเหตุผลด้วย รอบหน้าจะหาตรงขึ้น)
+• ติดต่อแล้ว 12 / ตอบกลับ 12 / ปิดได้ 12
 
 📅 วันหยุด
 • เพิ่มวันหยุด 31 ธันวาคม สิ้นปี
@@ -256,6 +263,75 @@ async function doConvertDoc(env, uid, cmd) {
   const draft = buildDraft({ ...base, vat_mode });
   await savePending(db, uid, { kind: 'doc', doc: draft });
   return docSummary(draft);
+}
+
+// ---------- ลูกค้ามุ่งหวัง ----------
+
+/** การ์ดที่ส่งเข้าไลน์ตอนเช้า — อ่านจบใน 30 วินาที แล้วตัดสินใจได้เลย */
+export function leadCard(l, base = '') {
+  const why = JSON.parse(l.why || '[]');
+  const contact = [
+    l.phone ? `โทร ${l.phone}` : null,
+    l.facebook ? `เพจ ${l.facebook}` : null,
+    l.website ? `เว็บ ${l.website}` : null,
+    l.line_id ? `ไลน์ ${l.line_id}` : 'ไม่พบไลน์สาธารณะ',
+  ].filter(Boolean);
+
+  return [
+    `ลูกค้ามุ่งหวังวันนี้ · รายการที่ ${l.id}`,
+    '',
+    l.name,
+    [l.category, l.province].filter(Boolean).join(' · '),
+    '',
+    'ทำไมน่าคุย',
+    ...why.map((w) => `• ${w}`),
+    '',
+    'ติดต่อ',
+    ...contact,
+    '',
+    `ความน่าคุย ${l.fit + l.reach + l.timing}/15 (ตรงกลุ่ม ${l.fit} · ติดต่อได้ ${l.reach} · จังหวะ ${l.timing})`,
+    l.draft ? `\nข้อความที่ร่างไว้ — อ่านแล้วส่งเอง\n"${l.draft}"` : null,
+    '',
+    `ที่มาของข้อมูลทุกช่องดูได้ที่ ${base}/admin?tab=leads`,
+    `ตอบกลับ: "สนใจ ${l.id}" / "ไม่สนใจ ${l.id}" / "ติดต่อแล้ว ${l.id}"`,
+  ].filter((x) => x !== null).join('\n');
+}
+
+/**
+ * "สนใจ 12" / "ไม่สนใจ 12 ร้านเล็กเกินไป" — อ่านจากข้อความตรงๆ ไม่เรียก AI
+ * เหตุผลที่พิมพ์ต่อท้ายสำคัญกว่าตัวสถานะ เพราะมันคือสิ่งที่ป้อนกลับเข้ารอบค้นหาถัดไป
+ * คืน null ถ้าไม่ใช่รูปแบบนี้ ให้ข้อความไปเข้าทางปกติต่อ
+ */
+async function doLeadStatus(env, msg) {
+  const words = Object.keys(LEAD_WORD_TO_STATUS).sort((a, b) => b.length - a.length);
+  const m = msg.match(new RegExp(`^(${words.join('|')})\\s*#?(\\d+)\\s*(.*)$`, 's'));
+  if (!m) return null;
+
+  const status = LEAD_WORD_TO_STATUS[m[1]];
+  const id = Number(m[2]);
+  const note = m[3].trim() || null;
+
+  const lead = await setLeadStatus(env.DB, id, status, note);
+  if (!lead) return `ไม่พบลูกค้ามุ่งหวังรายการที่ ${id} ครับ`;
+
+  const tail = status === 'dropped' && !note
+    ? '\n\nบอกเหตุผลสั้นๆ ได้นะครับ เช่น "ไม่สนใจ ' + id + ' ร้านเล็กเกินไป"\nเหตุผลคือสิ่งที่ทำให้รอบหน้าหาตรงขึ้น'
+    : status === 'won'
+      ? '\n\nออกใบเสนอราคาให้เลยได้ครับ แล้วเขาจะกลายเป็นลูกค้าในระบบเอง'
+      : '';
+
+  return `บันทึกแล้ว — ${lead.name} เป็น "${LEAD_STATUSES[status].th}"${note ? `\nเหตุผล: ${note}` : ''}${tail}`;
+}
+
+/** รายการที่ยังไม่ได้ตามต่อ — พิมพ์ "มุ่งหวัง" ดูได้ทุกเมื่อ */
+async function doListLeads(env) {
+  const rows = await recentLeads(env.DB, { limit: 10 });
+  if (!rows.length) return 'ยังไม่มีลูกค้ามุ่งหวังในระบบครับ ระบบจะหามาให้ทุกเช้า 09:00 น.';
+  const body = rows.map((l) => {
+    const st = LEAD_STATUSES[l.status]?.th ?? l.status;
+    return `#${l.id} ${l.name} [${st}] ${l.fit + l.reach + l.timing}/15`;
+  }).join('\n');
+  return `ลูกค้ามุ่งหวังล่าสุด\n${body}\n\nดูรายละเอียดพร้อมที่มาข้อมูลที่ ${env.BASE_URL || ''}/admin?tab=leads`;
 }
 
 /**
@@ -941,6 +1017,11 @@ export async function handleText(env, uid, text) {
     }
     if (p) await savePending(db, uid, p);   // ไม่ได้รออยู่ ก็คืนรายการเดิมกลับไป
   }
+
+  // ตอบสถานะลูกค้ามุ่งหวัง ("สนใจ 12", "ไม่สนใจ 12 ร้านเล็กไป") — อ่านตรงๆ ไม่ต้องเรียก AI
+  const leadAnswer = await doLeadStatus(env, msg);
+  if (leadAnswer) return leadAnswer;
+  if (/^(มุ่งหวัง|ลูกค้ามุ่งหวัง|ลูกค้าใหม่)$/.test(msg)) return doListLeads(env);
 
   // ขอแก้วันที่ของร่างที่รออยู่ — อ่านจากข้อความตรงๆ ไม่ต้องเรียก AI เหมือนกัน
   if (/^(วันที่|ลงวันที่|แก้วันที่|เปลี่ยนวันที่|ย้อนวันที่|ใช้วันที่)/.test(msg)) {
