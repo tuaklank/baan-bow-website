@@ -17,6 +17,8 @@ import {
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
+import { huntLead } from './leads.js';
+import { push } from './line.js';
 import {
   todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
   thaiDate, thaiMonth, fmtBaht,
@@ -56,6 +58,7 @@ export const HELP = `คำสั่งที่ใช้ได้
 • แก้รายจ่าย 12 ค่าส่ง 80         (ยกเลิกของเดิมแล้วลงใหม่ ไม่ทับของเดิม)
 
 🔎 ลูกค้ามุ่งหวัง (ระบบหามาให้ทุกเช้า 09:00 น. วันละเจ้า)
+• หาลูกค้า                       (สั่งหาเดี๋ยวนี้ ไม่ต้องรอรอบเช้า)
 • มุ่งหวัง                        (ดูรายการล่าสุด)
 • สนใจ 12                        (น่าทัก เก็บไว้ตามต่อ)
 • ไม่สนใจ 12 ร้านเล็กเกินไป      (บอกเหตุผลด้วย รอบหน้าจะหาตรงขึ้น)
@@ -321,6 +324,26 @@ async function doLeadStatus(env, msg) {
       : '';
 
   return `บันทึกแล้ว — ${lead.name} เป็น "${LEAD_STATUSES[status].th}"${note ? `\nเหตุผล: ${note}` : ''}${tail}`;
+}
+
+/**
+ * สั่งหาเดี๋ยวนี้ ไม่ต้องรอรอบเช้า — ใช้ตอนอยากได้งานเพิ่มวันนี้เลย
+ *
+ * ค้นเว็บใช้เวลา 1-3 นาที ซึ่งนานกว่าอายุ reply token ของไลน์ จึงตอบรับทันทีก่อน
+ * แล้วค่อย push การ์ดตามไปทีหลัง ไม่ใช่ await ค้างไว้แล้วตอบไม่ทัน
+ *
+ * ต่างจากรอบ cron ตรงที่ "ไม่เจอ" ก็ต้องบอก เพราะคนสั่งกำลังนั่งรอคำตอบอยู่
+ */
+async function huntAndPush(env, uid) {
+  try {
+    const { lead, skipped } = await huntLead(env);
+    await push(env, uid, lead
+      ? '🔎 ' + leadCard(lead, env.BASE_URL || '')
+      : `รอบนี้ยังไม่เจอเจ้าที่ข้อมูลครบพอจะติดต่อได้ครับ (${skipped})\nสั่ง "หาลูกค้า" ซ้ำได้ หรือรอรอบพรุ่งนี้ 09:00 น.`);
+  } catch (e) {
+    console.error('huntAndPush', e);
+    await push(env, uid, '⚠️ หาลูกค้าไม่สำเร็จ ระบบขัดข้อง ดู log ด้วย wrangler tail ครับ');
+  }
 }
 
 /** รายการที่ยังไม่ได้ตามต่อ — พิมพ์ "มุ่งหวัง" ดูได้ทุกเมื่อ */
@@ -977,8 +1000,12 @@ async function doConfirm(env, uid) {
 
 // ---------- ทางเข้าหลัก ----------
 
-/** คืนข้อความที่จะตอบ หรือ null ถ้าไม่ต้องตอบ (คนอื่นที่ไม่ได้รับอนุญาต) */
-export async function handleText(env, uid, text) {
+/**
+ * คืนข้อความที่จะตอบ หรือ null ถ้าไม่ต้องตอบ (คนอื่นที่ไม่ได้รับอนุญาต)
+ * ctx มีเฉพาะตอนมาจาก webhook จริง — คำสั่งที่ใช้เวลานานกว่า reply token จะหมดอายุ
+ * ต้องใช้ ctx.waitUntil ทำงานต่อเบื้องหลังแล้ว push ตามไป
+ */
+export async function handleText(env, uid, text, ctx = null) {
   const db = env.DB;
   const msg = String(text).trim();
 
@@ -1022,6 +1049,11 @@ export async function handleText(env, uid, text) {
   const leadAnswer = await doLeadStatus(env, msg);
   if (leadAnswer) return leadAnswer;
   if (/^(มุ่งหวัง|ลูกค้ามุ่งหวัง|ลูกค้าใหม่)$/.test(msg)) return doListLeads(env);
+  if (/^(หาลูกค้า|หาลูกค้าเลย|หาเลย)$/.test(msg)) {
+    if (!ctx) return 'คำสั่งนี้สั่งได้จากไลน์เท่านั้นครับ';
+    ctx.waitUntil(huntAndPush(env, uid));
+    return 'กำลังค้นให้ครับ ใช้เวลาประมาณ 1-3 นาที เจอแล้วจะส่งการ์ดมาให้';
+  }
 
   // ขอแก้วันที่ของร่างที่รออยู่ — อ่านจากข้อความตรงๆ ไม่ต้องเรียก AI เหมือนกัน
   if (/^(วันที่|ลงวันที่|แก้วันที่|เปลี่ยนวันที่|ย้อนวันที่|ใช้วันที่)/.test(msg)) {

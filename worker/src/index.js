@@ -47,7 +47,7 @@ async function handleWebhook(request, env, ctx) {
       const uid = ev.source?.userId;
       if (!uid) continue;
       try {
-        const answer = await handleText(env, uid, ev.message.text);
+        const answer = await handleText(env, uid, ev.message.text, ctx);
         if (answer) await reply(env, ev.replyToken, answer);
       } catch (e) {
         console.error('handleText', e);
