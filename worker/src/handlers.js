@@ -17,6 +17,7 @@ import {
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
+import { readDraftEdit, draftToBase, isEditError, EDIT_HELP } from './draft.js';
 import { huntLead } from './leads.js';
 import { push } from './line.js';
 import {
@@ -33,7 +34,12 @@ export const HELP = `คำสั่งที่ใช้ได้
 • ออกใบกำกับภาษีจาก QT181069001
 • ยกเลิก RC181069003
 • ...ลงวันที่ 15/10      (ไม่บอกวันที่ = ลงวันนี้ บอกมาก็ลงวันนั้น ย้อนหลังได้)
-• วันที่ 15/10           (แก้วันที่ของร่างที่รอยืนยันอยู่ ก่อนพิมพ์ "ยืนยัน")
+
+✏️ แก้ร่างก่อนยืนยัน (ไม่ต้องพิมพ์ใหม่ทั้งก้อน)
+• แก้ข้อ 2 ราคา 4500   /   แก้ข้อ 2 จำนวน 3   /   ลบข้อ 4   /   เพิ่มข้อ ค่าส่ง 350
+• แก้ที่อยู่ ...   /   แก้เลขภาษี ...   /   แก้ส่วนลด 500   /   แก้ประเภท ใบเสร็จ
+• วันที่ 15/10
+• พิมพ์ "แก้" เพื่อดูวิธีแก้ทุกช่อง
 
 🔎 ค้นหา / สรุป
 • หา QT181069001  หรือ  หา โตโยต้าพัทยา
@@ -154,7 +160,8 @@ function docSummary(d) {
     `รวมทั้งสิ้น ${fmtBaht(d.total)} บาท`,
     d.wht_rate ? `หัก ณ ที่จ่าย ${d.wht_rate / 100}% −${fmtBaht(d.wht)}\nยอดชำระสุทธิ ${fmtBaht(d.net_payable)} บาท` : null,
     '',
-    'พิมพ์ "ยืนยัน" เพื่อออกเอกสาร / "วันที่ 15/10" เพื่อแก้วันที่ / "ยกเลิก" เพื่อทิ้งรายการนี้',
+    'พิมพ์ "ยืนยัน" เพื่อออกเอกสาร / "ยกเลิก" เพื่อทิ้งรายการนี้',
+    'แก้ได้ทุกช่องโดยไม่ต้องพิมพ์ใหม่ เช่น "แก้ข้อ 2 ราคา 4500" / "ลบข้อ 3" / "วันที่ 15/10" — พิมพ์ "แก้" ดูทั้งหมด',
   ];
   return parts.filter((x) => x !== null).join('\n');
 }
@@ -386,6 +393,65 @@ async function doSetIssueDate(env, uid, msg) {
   };
   await savePending(db, uid, { kind: 'doc', doc });
   return docSummary(doc);
+}
+
+/**
+ * ประกอบร่างใหม่จากข้อมูลตั้งต้นที่แก้แล้ว ตรวจซ้ำทุกด่าน แล้วเก็บเป็นรายการรอยืนยัน
+ * ต้องตรวจซ้ำเพราะการแก้เปลี่ยนประเภทเอกสารหรือผู้ขายได้ ซึ่งเปลี่ยนเงื่อนไขทางกฎหมาย
+ * (เช่น แก้เป็นใบกำกับภาษีทั้งที่ผู้ขายไม่มีเลขภาษี หรือลูกค้ายังไม่มีที่อยู่)
+ */
+async function saveDraftFrom(env, uid, base, vat_mode, headline) {
+  const db = env.DB;
+  const lead = headline ? `✏️ ${headline}\n\n` : '';
+
+  const blocked = sellerCannotIssue(getSeller(base.seller), base.type);
+  if (blocked) return lead + blocked;
+
+  const badCustomer = checkCustomer(base.customer, base.type);
+  if (badCustomer) return lead + badCustomer;
+
+  // ใบกำกับภาษีบังคับมี VAT — แก้ประเภทมาเป็นใบภาษีทั้งที่ร่างเดิมไม่มี VAT ต้องถามใหม่
+  let mode = vat_mode;
+  if (TYPES[base.type].tax && mode === 'none') mode = null;
+  if (!mode) {
+    await savePending(db, uid, { kind: 'need_vat', base });
+    return lead + askVat(TYPES[base.type].tax);
+  }
+
+  let draft;
+  try {
+    draft = buildDraft({ ...base, vat_mode: mode });
+  } catch (e) {
+    // compute() ปฏิเสธ เช่น ส่วนลดมากกว่ายอดรวม — ร่างเดิมยังอยู่ ไม่ได้ถูกเขียนทับ
+    return `แก้ไม่ได้ครับ: ${e.message}\n\nร่างเดิมยังอยู่ ลองใหม่หรือพิมพ์ "ยกเลิก" เพื่อทิ้งร่าง`;
+  }
+  await savePending(db, uid, { kind: 'doc', doc: draft });
+  return lead + docSummary(draft);
+}
+
+/**
+ * แก้ร่างที่รอยืนยันอยู่ทีละช่อง ("แก้ข้อ 2 ราคา 4500", "แก้ที่อยู่ ...", "ลบข้อ 3")
+ * อ่านจากข้อความตรงๆ ไม่เรียก AI — เดิมต้อง "ยกเลิก" แล้วพิมพ์ทั้งก้อนใหม่
+ * ซึ่งเสียค่าอ่านข้อความเต็มราคาทุกครั้งที่ลูกค้าต่อราคาแค่บรรทัดเดียว
+ * คืน null ถ้าไม่มีร่างรออยู่ หรือข้อความนี้ไม่ใช่คำสั่งแก้ร่าง
+ */
+async function doEditDraft(env, uid, msg) {
+  const p = await peekPending(env.DB, uid);
+  if (p?.kind !== 'doc' && p?.kind !== 'need_vat') return null;
+
+  const edit = readDraftEdit(msg);
+  if (!edit) return null;
+
+  // คัดลอกก่อนแก้ ถ้าแก้ไม่สำเร็จกลางทางร่างเดิมในฐานข้อมูลจะไม่ถูกแตะเลย
+  const base = p.kind === 'doc' ? draftToBase(p.doc) : JSON.parse(JSON.stringify(p.base));
+  let headline;
+  try {
+    headline = edit.apply(base);
+  } catch (e) {
+    if (isEditError(e)) return e.message;
+    throw e;
+  }
+  return saveDraftFrom(env, uid, base, p.kind === 'doc' ? p.doc.vat_mode : null, headline);
 }
 
 async function doVoidDoc(env, uid, cmd) {
@@ -1027,22 +1093,20 @@ export async function handleText(env, uid, text, ctx = null) {
     return 'ทิ้งรายการที่รออยู่แล้วครับ';
   }
   if (/^(help|ช่วย|คำสั่ง|เมนู)$/i.test(msg)) return HELP;
+  if (/^(แก้|แก้ไข)\??$/.test(msg)) return EDIT_HELP;
 
-  // ถ้ากำลังรอคำตอบเรื่อง VAT ให้อ่านจากข้อความตรงๆ ไม่ต้องเสียเวลาเรียก AI
+  // คำตอบเรื่อง VAT — อ่านจากข้อความตรงๆ ไม่ต้องเสียเวลาเรียก AI
+  // ใช้ได้ทั้งตอนที่ระบบถามอยู่ และตอนขอเปลี่ยน VAT ของร่างที่ประกอบไว้แล้ว
   const vatAnswer = readVatMode(msg);
   if (vatAnswer) {
-    const p = await takePending(db, uid);
-    if (p?.kind === 'need_vat') {
-      const tax = TYPES[p.base.type].tax;
-      if (tax && vatAnswer === 'none') {
-        await savePending(db, uid, p);
-        return `${TYPES[p.base.type].th}ต้องมี VAT 7% ครับ — ตอบ "รวม vat" หรือ "ไม่รวม vat"`;
+    const p = await peekPending(db, uid);
+    if (p?.kind === 'need_vat' || p?.kind === 'doc') {
+      const base = p.kind === 'doc' ? draftToBase(p.doc) : p.base;
+      if (TYPES[base.type].tax && vatAnswer === 'none') {
+        return `${TYPES[base.type].th}ต้องมี VAT 7% ครับ — ตอบ "รวม vat" หรือ "ไม่รวม vat"`;
       }
-      const draft = buildDraft({ ...p.base, vat_mode: vatAnswer });
-      await savePending(db, uid, { kind: 'doc', doc: draft });
-      return docSummary(draft);
+      return saveDraftFrom(env, uid, base, vatAnswer, p.kind === 'doc' ? 'เปลี่ยน VAT' : null);
     }
-    if (p) await savePending(db, uid, p);   // ไม่ได้รออยู่ ก็คืนรายการเดิมกลับไป
   }
 
   // ตอบสถานะลูกค้ามุ่งหวัง ("สนใจ 12", "ไม่สนใจ 12 ร้านเล็กไป") — อ่านตรงๆ ไม่ต้องเรียก AI
@@ -1060,6 +1124,11 @@ export async function handleText(env, uid, text, ctx = null) {
     const answer = await doSetIssueDate(env, uid, msg);
     if (answer) return answer;
   }
+
+  // แก้ร่างที่รออยู่ทีละช่อง ("แก้ข้อ 2 ราคา 4500", "ลบข้อ 3", "แก้ที่อยู่ ...")
+  // อ่านตรงๆ ไม่เรียก AI — ถ้าไม่มีร่างรออยู่หรืออ่านไม่ออกจะคืน null แล้วไหลไปทางปกติ
+  const edited = await doEditDraft(env, uid, msg);
+  if (edited) return edited;
 
   // เลขที่เอกสารโดดๆ = ขอดูเอกสารนั้น
   if (parseDocNo(msg)) return doSearch(env, { query: msg });

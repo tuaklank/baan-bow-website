@@ -282,20 +282,36 @@ VAT (สำคัญ ห้ามเดา)
 - อย่าสับสนกับ job.due_date ที่เป็นกำหนดส่งงาน — issue_date คือวันที่หน้าเอกสารเท่านั้น`;
 }
 
+/**
+ * พารามิเตอร์ของคำขอหนึ่งครั้ง — แยกออกมาเพื่อให้เทสต์ยืนยันได้ว่ายังเปิดแคชอยู่
+ * กฎชุดนี้ยาวประมาณ 5,000 ตัวอักษรและส่งซ้ำทุกข้อความ จึงให้แคชไว้
+ * อ่านจากแคชคิด 0.1 เท่า เขียน 1.25 เท่า อายุ 5 นาที และต่ออายุทุกครั้งที่ถูกใช้
+ * คุ้มเมื่อพิมพ์หลายข้อความติดกัน ซึ่งเป็นรูปแบบปกติของการออกเอกสารหนึ่งใบ
+ */
+export function buildRequest(env, text, today) {
+  return {
+    model: env.CLAUDE_MODEL || 'claude-sonnet-5-5',
+    max_tokens: 2000,
+    // งานนี้แค่อ่านข้อความสั้นๆ ใช้ effort ต่ำเพื่อให้ตอบ LINE ได้ทัน
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
+    system: [{ type: 'text', text: systemPrompt(today), cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: text }],
+  };
+}
+
 /** คืน object ตาม EMPTY เสมอ; ถ้าเรียก AI ไม่สำเร็จจะมี failed เป็นข้อความ error */
 export async function parseCommand(env, text) {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const today = todayBkk();
 
   try {
-    const res = await client.messages.parse({
-      model: env.CLAUDE_MODEL || 'claude-sonnet-5-5',
-      max_tokens: 2000,
-      // งานนี้แค่อ่านข้อความสั้นๆ ใช้ effort ต่ำเพื่อให้ตอบ LINE ได้ทัน
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
-      system: systemPrompt(today),
-      messages: [{ role: 'user', content: text }],
-    });
+    const res = await client.messages.parse(buildRequest(env, text, today));
+
+    // ดูด้วย wrangler tail ว่าแคชติดจริงไหม (cache_r = 0 ตลอด แปลว่ามีอะไรทำให้แคชหลุด)
+    const u = res.usage || {};
+    console.log('ai usage'
+      + ` in=${u.input_tokens ?? '-'} cache_w=${u.cache_creation_input_tokens ?? 0}`
+      + ` cache_r=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens ?? '-'}`);
 
     if (res.stop_reason === 'refusal') {
       console.error('Claude refused', res.stop_details);
