@@ -223,7 +223,18 @@ const ALL_FIELD_WORDS = [...CUSTOMER_FIELDS, ...DOC_TEXT_FIELDS]
   .sort((a, b) => b.length - a.length);
 
 const CMD = String.raw`(?:แก้ไข|แก้|เปลี่ยน|ตั้ง)`;
-const ITEM = String.raw`(?:ข้อ|รายการ|บรรทัด)`;
+// "ข้อ 2" "ข้อ2" "รายการที่ 1" "บรรทัดที่2" — คำว่า "ที่" คนพิมพ์กันเป็นปกติ
+const ITEM = String.raw`(?:ข้อ|รายการ|บรรทัด)(?: ?ที่)?`;
+
+// เลขลำดับที่เขียนเป็นตัวหนังสือ — ในบิลจริงเจ้าของร้านก็ไล่รายการด้วย "หนึ่ง สอง สาม"
+const THAI_INDEX = ['หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า', 'สิบ'];
+const INDEX = String.raw`(\d+|${THAI_INDEX.join('|')})`;
+
+/** เลขลำดับที่อ่านได้ทั้งแบบตัวเลขและตัวหนังสือ */
+const readIndex = (raw) => {
+  const i = THAI_INDEX.indexOf(String(raw));
+  return i >= 0 ? i + 1 : Number(raw);
+};
 
 /**
  * อ่านคำสั่งแก้ร่างหนึ่งคำสั่ง
@@ -242,19 +253,19 @@ export function readDraftEdit(text) {
   }
 
   // ---------- รายการสินค้า: อ้างด้วยเลขข้อ ----------
-  let m = msg.match(new RegExp(`^${CMD} ?${ITEM} ?(\\d+) (.+)$`));
+  let m = msg.match(new RegExp(`^${CMD} ?${ITEM} ?${INDEX} (.+)$`));
   if (m) {
-    const [, n, rest] = m;
-    const change = readItemChange(rest);
+    const n = readIndex(m[1]);
+    const change = readItemChange(m[2]);
     if (change) {
       return { apply: (base) => applyItemChange(itemAt(base, n), n, change.field, change.raw) };
     }
   }
 
-  m = msg.match(new RegExp(`^(?:ลบ|ตัด|เอาออก) ?${ITEM} ?(\\d+)$`));
+  m = msg.match(new RegExp(`^(?:ลบ|ตัด|เอาออก) ?${ITEM} ?${INDEX}$`));
   if (m) {
-    const n = m[1];
-    return { apply: (base) => removeItem(base, itemAt(base, n), Number(n)) };
+    const n = readIndex(m[1]);
+    return { apply: (base) => removeItem(base, itemAt(base, n), n) };
   }
 
   // เพิ่มข้อ <ชื่อ> [<จำนวน> x] <ราคา>   — ไม่บอกจำนวน = 1 ชิ้น
