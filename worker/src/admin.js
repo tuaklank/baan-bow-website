@@ -158,7 +158,7 @@ function leadsView(rows, monthly) {
 </div>`;
 
   if (!rows.length) {
-    return head + '<p class="empty">ยังไม่มีลูกค้ามุ่งหวัง<br>ระบบจะหามาให้ทุกเช้า 09:00 น. วันละเจ้า</p>';
+    return head + '<p class="empty">ยังไม่มีลูกค้ามุ่งหวัง<br>สั่งค้นได้ทางไลน์ด้วยคำว่า "หาลูกค้า"</p>';
   }
   return head + rows.map(leadCardHtml).join('\n')
     + '<p class="empty" style="font-size:12.5px">ตอบสถานะทางไลน์ได้เลย เช่น "สนใจ 12" หรือ "ไม่สนใจ 12 ร้านเล็กเกินไป"</p>';

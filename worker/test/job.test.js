@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  JOB_DEFAULT_DUE_DAYS, CRON_MORNING, CRON_LEADS, CRON_EVENING,
+  JOB_DEFAULT_DUE_DAYS, CRON_MORNING, CRON_EVENING,
   JOB_STATUSES, JOB_OPEN_SQL,
 } from '../src/config.js';
 import { addDays, todayBkk, dayOfWeek } from '../src/thai.js';
@@ -29,12 +29,10 @@ test('cron เช้า 08:00 และเย็น 17:00 เวลาไทย 
   const hourUtc = (c) => Number(c.split(' ')[1]);
   assert.equal((hourUtc(CRON_MORNING) + 7) % 24, 8);
   assert.equal((hourUtc(CRON_EVENING) + 7) % 24, 17);
-  // รอบหาลูกค้ามุ่งหวัง 09:00 น. — หลังสรุปงานเช้า ไม่ให้สองข้อความชนกัน
-  assert.equal((hourUtc(CRON_LEADS) + 7) % 24, 9);
 });
 
 test('cron ทุกตัวต้องไม่ซ้ำกัน ไม่งั้นแยกไม่ออกว่ารอบไหน', () => {
-  const all = [CRON_MORNING, CRON_LEADS, CRON_EVENING];
+  const all = [CRON_MORNING, CRON_EVENING];
   assert.equal(new Set(all).size, all.length);
 });
 
@@ -44,7 +42,7 @@ test('cron ที่ประกาศใน wrangler.toml ตรงกับท
   const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   const line = toml.split('\n').find((l) => l.trim().startsWith('crons'));
   const declared = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(declared.sort(), [CRON_MORNING, CRON_LEADS, CRON_EVENING].sort());
+  assert.deepEqual(declared.sort(), [CRON_MORNING, CRON_EVENING].sort());
 });
 
 test('สถานะที่ถือว่า "ปิดแล้ว" ตรงกับที่ใช้กรองงานค้าง', () => {

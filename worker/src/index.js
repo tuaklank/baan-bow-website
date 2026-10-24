@@ -3,9 +3,8 @@
 //   GET  /d/:token  เอกสาร A4
 //   GET  /admin     หลังบ้านมือถือ (กั้นด้วย Cloudflare Access)
 import { verifySignature, reply, push } from './line.js';
-import { handleText, morningDigest, eveningDigest, leadCard } from './handlers.js';
-import { CRON_EVENING, CRON_LEADS } from './config.js';
-import { huntLead } from './leads.js';
+import { handleText, morningDigest, eveningDigest } from './handlers.js';
+import { CRON_EVENING } from './config.js';
 import {
   docByToken, recentDocs, searchDocs, openJobs, monthSummary,
   listStock, stockValue, recentExpenses, monthExpenses, monthlyTrend,
@@ -106,26 +105,6 @@ async function handleAdmin(url, env) {
   }));
 }
 
-/**
- * รอบหาลูกค้ามุ่งหวัง 09:00 น. — ไม่เจอก็เงียบ ไม่ต้องรายงานว่าวันนี้ไม่เจอ
- * ข้อความ "วันนี้ไม่เจอ" ทุกเช้าจะกลายเป็นสิ่งที่เจ้าของร้านเลิกอ่านภายในสัปดาห์เดียว
- * ความผิดพลาดจากการเรียก AI ก็เงียบเหมือนกัน แต่เขียนลง log ไว้ให้ตามด้วย wrangler tail ได้
- */
-async function leadDigest(env) {
-  if (!env.ANTHROPIC_API_KEY) return null;
-  try {
-    const { lead, skipped } = await huntLead(env);
-    if (!lead) {
-      console.log('หาลูกค้ามุ่งหวังไม่ได้: ' + skipped);
-      return null;
-    }
-    return '🔎 ' + leadCard(lead, env.BASE_URL || '');
-  } catch (e) {
-    console.error('leadDigest', e);
-    return null;
-  }
-}
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -155,9 +134,7 @@ export default {
     ctx.waitUntil((async () => {
       const msg = event.cron === CRON_EVENING
         ? await eveningDigest(env)
-        : event.cron === CRON_LEADS
-          ? await leadDigest(env)
-          : await morningDigest(env);
+        : await morningDigest(env);
       if (!msg) return;   // ไม่มีงานค้างก็ไม่ต้องรบกวน
       const allowed = (env.ALLOWED_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
       for (const uid of allowed) await push(env, uid, msg);
