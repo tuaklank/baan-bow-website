@@ -1,0 +1,370 @@
+// แก้ร่างเอกสารทีละช่องโดยไม่เรียก AI
+// เคสที่เอามาเทสต์ส่วนใหญ่มาจากงานจริงที่เคยต้องพิมพ์ใหม่ทั้งก้อน 5 รอบเพื่อใบเดียว
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  readDraftEdit, draftToBase, readMoney, readSeller, readDocType, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP,
+} from '../src/draft.js';
+import { compute } from '../src/money.js';
+
+/** ร่างตัวอย่าง — รูปเดียวกับที่ buildDraft() เก็บลง pending (ยอดเป็นสตางค์) */
+const draft = () => ({
+  type: 'quotation',
+  seller: 'baanbow',
+  issue_date: '2026-10-23',
+  customer: {
+    name: 'หจก. เช้าเทิร์น มีเดีย',
+    address: '29/1 ถ.เจ้าฟ้า ต.ตลาดเหนือ อ.เมือง จ.ภูเก็ต 83000',
+    tax_id: '0-8335-47001-16-4',
+    branch: null, contact: null, phone: null,
+  },
+  lines: [
+    { name: 'โบว์ขนาด 2*1.6 เมตร สีแดงล้วน (3 ชั้น)', note: null, qty: 1, unit_price: 750000, amount: 750000 },
+    { name: 'สายคาด แดงล้วนผ้า 2 ชั้นยาว 26เมตร', note: null, qty: 1, unit_price: 600000, amount: 600000 },
+    { name: 'ซิลความ (20*50cm, 200฿/จุด)', note: null, qty: 1, unit_price: 20000, amount: 20000 },
+  ],
+  discount: 0, vat_mode: 'none', wht_rate: 0,
+  note: null, payment_terms: null, ref_doc_no: null,
+});
+
+/** แก้ร่างหนึ่งคำสั่งแล้วคืนข้อมูลตั้งต้นที่แก้แล้ว (เหมือนที่ doEditDraft ทำ) */
+function edit(msg, doc = draft()) {
+  const e = readDraftEdit(msg);
+  assert.ok(e, 'อ่านคำสั่งไม่ออก: ' + msg);
+  const base = draftToBase(doc);
+  const headline = e.apply(base);
+  return { base, headline };
+}
+
+/** คำสั่งที่ควรถูกปฏิเสธ — คืนข้อความที่ผู้ใช้จะเห็น */
+function rejects(msg, doc = draft()) {
+  const e = readDraftEdit(msg);
+  assert.ok(e, 'อ่านคำสั่งไม่ออก: ' + msg);
+  try {
+    e.apply(draftToBase(doc));
+  } catch (err) {
+    assert.ok(isEditError(err), 'ควร throw EditError ไม่ใช่ ' + err);
+    return err.message;
+  }
+  assert.fail('ควรถูกปฏิเสธ: ' + msg);
+}
+
+test('ยอดสตางค์แปลงกลับเป็นบาทได้ตรง ไม่มีเศษหาย', () => {
+  const base = draftToBase(draft());
+  assert.deepEqual(base.items.map((i) => i.unit_price), [7500, 6000, 200]);
+  assert.equal(base.discount, 0);
+  // ประกอบกลับแล้วต้องได้ยอดเดิมเป๊ะ ไม่งั้นแก้ช่องเดียวแล้วยอดอื่นเพี้ยน
+  const c = compute({ ...base, vat_mode: 'none' });
+  assert.equal(c.total, 1370000);
+});
+
+test('แก้ราคารายการ แล้วยอดรวมคำนวณใหม่ให้เอง', () => {
+  const { base, headline } = edit('แก้ข้อ 2 ราคา 4500');
+  assert.equal(base.items[1].unit_price, 4500);
+  assert.match(headline, /4,500/);
+  assert.equal(compute({ ...base, vat_mode: 'none' }).total, 1220000);
+});
+
+test('ราคามีจุลภาคหรือคำว่าบาทต่อท้ายก็อ่านได้', () => {
+  assert.equal(edit('แก้ข้อ 1 ราคา 7,250.50').base.items[0].unit_price, 7250.5);
+  assert.equal(edit('แก้ข้อ 1 ราคา 7250 บาท').base.items[0].unit_price, 7250);
+});
+
+test('แก้จำนวน ชื่อ และหมายเหตุของรายการ', () => {
+  assert.equal(edit('แก้ข้อ 1 จำนวน 3').base.items[0].qty, 3);
+  assert.equal(edit('แก้ข้อ 2 ชื่อ สายคาด แดงล้วนผ้า 1 ชั้น').base.items[1].name, 'สายคาด แดงล้วนผ้า 1 ชั้น');
+  assert.equal(edit('แก้ข้อ 3 หมายเหตุ ติดบนล่าง').base.items[2].note, 'ติดบนล่าง');
+  assert.equal(edit('แก้ข้อ 3 หมายเหตุ').base.items[2].note, null);   // ว่าง = ล้างทิ้ง
+});
+
+test('ลบรายการ และเพิ่มรายการใหม่', () => {
+  const after = edit('ลบข้อ 3').base;
+  assert.equal(after.items.length, 2);
+  assert.equal(compute({ ...after, vat_mode: 'none' }).total, 1350000);
+
+  const added = edit('เพิ่มข้อ ค่าส่ง 350').base;
+  assert.equal(added.items.length, 4);
+  assert.deepEqual(
+    { name: added.items[3].name, qty: added.items[3].qty, unit_price: added.items[3].unit_price },
+    { name: 'ค่าส่ง', qty: 1, unit_price: 350 },
+  );
+
+  const many = edit('เพิ่มข้อ เพิ่มข้อความ 2 x 450').base;
+  assert.equal(many.items[3].qty, 2);
+  assert.equal(many.items[3].unit_price, 450);
+});
+
+test('เรียกรายการด้วยชื่อได้ ไม่ต้องนับเลขข้อในหัว', () => {
+  // ข้อความจริงที่เจ้าของร้านพิมพ์มาแล้วเคยหลุดไปหา AI เพราะไม่ได้บอกเลขข้อ
+  const { base, headline } = edit('แก้สายคาด เป็นราคา 5000 บาท');
+  assert.equal(base.items[1].unit_price, 5000);
+  assert.match(headline, /แก้ราคาข้อ 2/);
+
+  assert.equal(edit('แก้สายคาด ราคา 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้สายคาด เป็น 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้สายคาด 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้สายคาด จำนวน 3').base.items[1].qty, 3);
+  assert.equal(edit('แก้ซิลความ หมายเหตุ ติดบนล่าง').base.items[2].note, 'ติดบนล่าง');
+  assert.equal(edit('ลบซิลความ').base.items.length, 2);
+});
+
+test('อ้างลำดับได้ทุกแบบที่คนพิมพ์จริง — มี "ที่" มีตัวหนังสือ ไม่เว้นวรรค', () => {
+  // "แก้ รายการที่1 เป็นราคา 7900 บาท" คือข้อความจริงที่เคยอ่านไม่ออกเพราะลืมคำว่า "ที่"
+  assert.equal(edit('แก้ รายการที่1 เป็นราคา 7900 บาท').base.items[0].unit_price, 7900);
+  assert.equal(edit('แก้รายการที่ 2 ราคา 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้ข้อที่2 เป็น 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้บรรทัดที่หนึ่ง จำนวน 3').base.items[0].qty, 3);
+  assert.equal(edit('ลบข้อสอง').base.items.length, 2);
+  assert.equal(edit('ลบรายการที่3').base.items.length, 2);
+});
+
+test('พิมพ์ชื่อช่องติดกับค่า หรือติดกับ "เป็น" ก็อ่านออก', () => {
+  // เวลารีบ เจ้าของร้านไม่เว้นวรรค — ของจริงเคยส่งมาแบบนี้แล้วหลุดไปหา AI
+  assert.equal(edit('แก้เลขภาษี0-8335-47001-26-4').base.customer.tax_id, '0-8335-47001-26-4');
+  assert.equal(edit('แก้ เลขภาษี เป็น0-8335-47001-26-4').base.customer.tax_id, '0-8335-47001-26-4');
+  assert.equal(edit('แก้ส่วนลด500').base.discount, 500);
+  assert.equal(edit('แก้ที่อยู่151 ม.1 ถ.วัดประดู่').base.customer.address, '151 ม.1 ถ.วัดประดู่');
+  assert.equal(edit('แก้ ข้อ2 เป็นราคา 4500 บาท').base.items[1].unit_price, 4500);
+});
+
+test('บอกราคาเดิมมาด้วย ("จาก 6000 เป็น 5000") ก็ยังอ่านออก', () => {
+  assert.equal(edit('แก้สายคาดจาก6000 เป็น 5000บาท').base.items[1].unit_price, 5000);
+  assert.equal(edit('แก้สายคาด จาก 6,000 เป็น 5000').base.items[1].unit_price, 5000);
+});
+
+test('ตั้งใจแก้ร่างแน่ๆ แต่อ่านไม่ออก ต้องไม่ถูกส่งไปหา AI', () => {
+  assert.equal(looksLikeEdit('แก้สายคาดกับโบว์ ลดอย่างละร้อย'), true);
+  assert.equal(looksLikeEdit('ลบอันที่สอง'), true);
+  // คำสั่งแก้รายจ่ายมีทางของตัวเอง ต้องปล่อยให้ AI อ่านเหมือนเดิม
+  assert.equal(looksLikeEdit('แก้รายจ่าย 12 ค่าส่ง 80'), false);
+  assert.equal(looksLikeEdit('ทำใบเสนอราคา คุณสมชาย'), false);
+  assert.equal(looksLikeEdit('ยืนยัน'), false);
+});
+
+test('ไม่บอกชื่อช่องแต่ให้ตัวเลขมา ถือว่าเป็นราคา', () => {
+  assert.equal(edit('แก้ข้อ 2 เป็น 5000').base.items[1].unit_price, 5000);
+  assert.equal(edit('แก้ข้อ 2 5,000 บาท').base.items[1].unit_price, 5000);
+});
+
+test('ชื่อที่ตรงหลายรายการ ไม่เดาให้ ถามว่าข้อไหน', () => {
+  const two = draft();
+  two.lines[0].name = 'โบว์แดง เล็ก';
+  two.lines[1].name = 'โบว์แดง ใหญ่';
+  const msg = rejects('แก้โบว์แดง ราคา 100', two);
+  assert.match(msg, /หลายรายการ/);
+  assert.match(msg, /ข้อ 1 โบว์แดง เล็ก/);
+  assert.match(msg, /ข้อ 2 โบว์แดง ใหญ่/);
+});
+
+test('ชื่อที่ไม่มีในร่าง = ไม่ใช่คำสั่งแก้ร่าง ปล่อยไปทางอื่น', () => {
+  // สำคัญมาก ไม่งั้น "แก้รายจ่าย 12 ค่าส่ง 80" จะถูกกินไปตอนมีร่างค้างอยู่
+  for (const m of ['แก้รายจ่าย 12 ค่าส่ง 80', 'แก้ของที่ไม่มี ราคา 100', 'ลบรายจ่าย 12']) {
+    const e = readDraftEdit(m);
+    if (!e) continue;                                  // ไม่ตรงรูปคำสั่งเลยก็จบ
+    assert.throws(() => e.apply(draftToBase(draft())), isNotAnEdit, m);
+  }
+});
+
+test('ลบรายการสุดท้ายไม่ได้ เอกสารต้องมีอย่างน้อย 1 รายการ', () => {
+  const one = draft();
+  one.lines = [one.lines[0]];
+  assert.match(rejects('ลบข้อ 1', one), /อย่างน้อย 1 รายการ/);
+});
+
+test('อ้างข้อที่ไม่มี ตอบว่ามีกี่ข้อ ไม่ใช่พังเงียบ', () => {
+  assert.match(rejects('แก้ข้อ 9 ราคา 100'), /มี 3 รายการ/);
+  assert.match(rejects('ลบข้อ 0'), /มี 3 รายการ/);
+});
+
+test('จำนวนหรือราคาที่ใช้ไม่ได้ ถูกปฏิเสธพร้อมตัวอย่าง', () => {
+  assert.match(rejects('แก้ข้อ 1 จำนวน 0'), /มากกว่า 0/);
+  assert.match(rejects('แก้ข้อ 1 ราคา เยอะๆ'), /อ่านราคาไม่ออก/);
+  assert.match(rejects('แก้ข้อ 1 ชื่อ '), /ว่างไม่ได้/);
+});
+
+test('แก้ช่องของลูกค้าได้ครบทุกช่อง และล้างค่าได้', () => {
+  assert.equal(edit('แก้ชื่อลูกค้า บริษัท นีโอเทค พลายวู้ด จำกัด').base.customer.name, 'บริษัท นีโอเทค พลายวู้ด จำกัด');
+  assert.equal(edit('แก้ที่อยู่ 151 ม.1 ถ.วัดประดู่ อ.เมือง จ.สุราษฎร์ธานี 84000').base.customer.address,
+    '151 ม.1 ถ.วัดประดู่ อ.เมือง จ.สุราษฎร์ธานี 84000');
+  assert.equal(edit('แก้เลขภาษี 0833547001164').base.customer.tax_id, '0833547001164');
+  assert.equal(edit('แก้สาขา สำนักงานใหญ่').base.customer.branch, 'สำนักงานใหญ่');
+  assert.equal(edit('แก้ผู้ติดต่อ คุณเอ').base.customer.contact, 'คุณเอ');
+  assert.equal(edit('แก้เบอร์ 076-224707').base.customer.phone, '076-224707');
+  assert.equal(edit('แก้สาขา').base.customer.branch, null);
+});
+
+test('แก้ช่องของตัวเอกสาร — ส่วนลด หัก ณ ที่จ่าย ประเภท ผู้ขาย หมายเหตุ', () => {
+  assert.equal(edit('แก้ส่วนลด 500').base.discount, 500);
+  assert.equal(edit('แก้ส่วนลด').base.discount, 0);
+  assert.equal(edit('แก้หัก ณ ที่จ่าย 3').base.wht_rate, 300);
+  assert.equal(edit('แก้หักณที่จ่าย 1').base.wht_rate, 100);
+  assert.equal(edit('แก้หัก ณ ที่จ่าย 0').base.wht_rate, 0);
+  assert.equal(edit('แก้ประเภท ใบเสร็จ').base.type, 'receipt');
+  assert.equal(edit('แก้ผู้ขาย ตัวกลาง').base.seller, 'tuaklang');
+  assert.equal(edit('แก้หมายเหตุ ส่งหน้างาน').base.note, 'ส่งหน้างาน');
+  assert.equal(edit('แก้เงื่อนไขชำระ โอน 50% ก่อนผลิต').base.payment_terms, 'โอน 50% ก่อนผลิต');
+});
+
+test('หัก ณ ที่จ่ายรับแค่ 1% กับ 3% ตามที่กฎหมายใช้จริง', () => {
+  assert.match(rejects('แก้หัก ณ ที่จ่าย 5'), /1% หรือ 3%/);
+});
+
+test('ประเภทหรือผู้ขายที่ไม่รู้จัก ตอบว่ามีอะไรให้เลือก', () => {
+  assert.match(rejects('แก้ประเภท ใบส่งของ'), /ใบเสนอราคา/);
+  assert.match(rejects('แก้ผู้ขาย ร้านอื่น'), /BAANBOW/);
+});
+
+test('แก้ไม่ทับร่างเดิม — ข้อมูลต้นทางไม่ถูกแตะ', () => {
+  const doc = draft();
+  edit('แก้ข้อ 1 ราคา 1', doc);
+  assert.equal(doc.lines[0].unit_price, 750000);
+  edit('แก้ที่อยู่ เปลี่ยนแล้ว', doc);
+  assert.equal(doc.customer.address, '29/1 ถ.เจ้าฟ้า ต.ตลาดเหนือ อ.เมือง จ.ภูเก็ต 83000');
+});
+
+test('ข้อความที่ไม่ใช่คำสั่งแก้ร่าง คืน null เพื่อให้ไหลไปทางอื่น', () => {
+  for (const m of [
+    'ยืนยัน',
+    'สต๊อก',
+    'ทำใบเสนอราคา คุณสมชาย โบว์แดง 2 ชิ้น ชิ้นละ 500',
+    'แก้วันที่ 15/10',                 // มีทางของตัวเองอยู่แล้ว (doSetIssueDate)
+    'เพิ่มงาน ติดตั้งโบว์',             // อย่าไปชนกับคำสั่งเพิ่มงาน
+    'เพิ่มวันหยุด 31 ธันวาคม สิ้นปี',
+  ]) {
+    assert.equal(readDraftEdit(m), null, m);
+  }
+});
+
+test('"เพิ่มข้อความ ..." เป็นชื่อสินค้า ไม่ใช่คำสั่งเพิ่มข้อ', () => {
+  // ของจริงเคยมีรายการชื่อ "เพิ่มข้อความ 2× 450 บาท" อยู่ในบิล ห้ามอ่านเป็นคำสั่ง
+  assert.equal(readDraftEdit('เพิ่มข้อความ 2× 450 บาท'), null);
+});
+
+test('พิมพ์ "แก้" เฉยๆ ได้วิธีแก้ทั้งหมด', () => {
+  assert.equal(rejects('แก้'), EDIT_HELP);
+  assert.match(EDIT_HELP, /แก้สายคาด เป็นราคา 5000/);
+});
+
+test('ตัวอ่านย่อย — เงิน ผู้ขาย ประเภทเอกสาร', () => {
+  assert.equal(readMoney('1,250.75'), 1250.75);
+  assert.equal(readMoney(''), null);
+  assert.equal(readMoney('abc'), null);
+
+  assert.equal(readSeller('บ้านโบว์'), 'baanbow');
+  assert.equal(readSeller('บริษัท ตัวกลาง จำกัด'), 'tuaklang');
+  assert.equal(readSeller('อะไรก็ไม่รู้'), null);
+
+  assert.equal(readDocType('ใบเสนอราคา'), 'quotation');
+  assert.equal(readDocType('ใบเสร็จ'), 'receipt');
+  assert.equal(readDocType('ใบกำกับภาษี'), 'tax_invoice');
+  // ชื่อยาวที่มีทั้งสองคำ ต้องได้ใบรวม ไม่ใช่ใบเสร็จเฉยๆ
+  assert.equal(readDocType('ใบเสร็จรับเงิน/ใบกำกับภาษี'), 'receipt_tax_invoice');
+});
+
+// ---------- รูปประโยคที่คนพิมพ์จริง ----------
+// เจ้าของร้านไม่ได้จำไวยากรณ์ของเรา เขาพิมพ์ตามที่พูด เทสต์ชุดนี้คือ "พิมพ์แบบไหนก็ต้องเข้าใจ"
+
+test('ราคา — คำกริยา คำเชื่อม และหน่วยเงิน พิมพ์แบบไหนก็ได้ความหมายเดียวกัน', () => {
+  for (const msg of [
+    'แก้ข้อ 2 ราคา 4500',
+    'แก้ข้อ2เป็น4500',             // ไม่เว้นวรรคเลย
+    'เปลี่ยนราคาข้อ 2 เป็น 4,500.-',  // ชื่อช่องมาก่อนเลขข้อ + ลงท้าย ".-"
+    'ปรับ ข้อ 2 เป็น 4500 บาท',
+    'ตั้งราคาข้อ 2 ให้เป็น 4500 ครับ',
+    'ขอแก้ราคาสายคาด เหลือ 4500 ด้วยครับ',
+    'แก้สายคาด = 4500',
+    'แก้สายคาด คือ 4500',
+    'แก้สายคาด หน่วยละ 4500',
+    'แก้สายคาดจาก 6000 เป็น 4500',
+    'update ข้อ 2 ราคา 4500',
+    'แก้#2 ราคา 4500',
+    'แก้อันที่ 2 ราคา 4500',
+    'แก้ข้อ ๒ ราคา ๔๕๐๐',            // เลขไทย — กดสลับโหมดคีย์บอร์ดค้าง
+  ]) {
+    const { base, headline } = edit(msg);
+    assert.equal(base.items[1].unit_price, 4500, msg);
+    assert.match(headline, /แก้ราคาข้อ 2/, msg);
+  }
+});
+
+test('ลบ — ลบ/ตัด/ไม่เอา/เอา...ออก ได้เหมือนกันหมด', () => {
+  for (const msg of [
+    'ลบข้อ 3', 'ลบข้อ 3 ทิ้ง', 'ตัดข้อ 3 ออก', 'ไม่เอาข้อ 3', 'ไม่ต้องข้อ 3',
+    'ลบซิลความ', 'ไม่เอาซิลความ', 'เอาซิลความออก', 'ลบ ซิลความ ครับ',
+  ]) {
+    const { base, headline } = edit(msg);
+    assert.equal(base.items.length, 2, msg);
+    assert.match(headline, /ลบข้อ 3/, msg);
+  }
+});
+
+test('จำนวนกับชื่อ — ชื่อช่องมาก่อนหรือหลังตัวรายการก็ได้', () => {
+  assert.equal(edit('แก้จำนวนสายคาด เป็น 3').base.items[1].qty, 3);
+  assert.equal(edit('แก้สายคาด qty 3').base.items[1].qty, 3);
+  assert.equal(edit('เปลี่ยนจำนวนข้อ 2 เป็น 3').base.items[1].qty, 3);
+  assert.equal(edit('แก้ชื่อรายการข้อ 2 เป็น สายคาด 1 ชั้น').base.items[1].name, 'สายคาด 1 ชั้น');
+});
+
+test('เพิ่มรายการ — ไม่ต้องมีคำว่า "ข้อ"', () => {
+  assert.equal(edit('เพิ่ม ค่าส่ง 350').base.items[3].unit_price, 350);
+  assert.equal(edit('ใส่ ค่าส่ง 2 x 180').base.items[3].qty, 2);
+  assert.equal(edit('เติมข้อ ค่าส่ง 350').base.items.length, 4);
+});
+
+test('ช่องของทั้งใบ — ไม่ต้องมีคำว่า "แก้" นำก็รู้ว่าสั่งแก้', () => {
+  assert.equal(edit('ส่วนลด 500').base.discount, 500);
+  assert.equal(edit('ส่วนลด500').base.discount, 500);
+  assert.equal(edit('เพิ่มส่วนลด 500').base.discount, 500);   // "เพิ่ม" = ตั้งค่าช่อง ไม่ใช่สินค้าใหม่
+  assert.equal(edit('หัก ณ ที่จ่าย 3').base.wht_rate, 300);
+  assert.equal(edit('เบอร์ 076-224707').base.customer.phone, '076-224707');
+  assert.equal(edit('สาขา สำนักงานใหญ่').base.customer.branch, 'สำนักงานใหญ่');
+  assert.equal(edit('ประเภท ใบเสร็จ').base.type, 'receipt');
+});
+
+test('คำลงท้ายสุภาพที่ติดกับข้อความ ยังอยู่ในหมายเหตุ ไม่ถูกตัดทิ้ง', () => {
+  // ตัด "ครับ" ท้ายคำสั่งที่จบด้วยตัวเลขได้ แต่ห้ามตัดเนื้อหาที่เขาตั้งใจพิมพ์ลงเอกสาร
+  assert.equal(edit('ใส่หมายเหตุ ส่งให้ด้วยนะครับ').base.note, 'ส่งให้ด้วยนะครับ');
+  assert.equal(edit('แก้ข้อ 2 หมายเหตุ ยาว 26 เมตร').base.items[1].note, 'ยาว 26 เมตร');
+});
+
+test('"โทร..." ไม่ใช่การแก้เบอร์ — เป็นงานที่สั่งได้จริง ปล่อยไปทางอื่น', () => {
+  assert.equal(readDraftEdit('โทรหาลูกค้าเรื่องสีโบว์'), null);
+  assert.equal(looksLikeEdit('โทรหาลูกค้าเรื่องสีโบว์'), false);
+});
+
+test('คำสั่งอื่นที่ขึ้นต้นด้วย "เพิ่ม" ไม่ถูกดักไว้ แม้มีร่างรอยืนยัน', () => {
+  // ถ้า looksLikeEdit ตอบ true พวกนี้จะได้วิธีแก้ร่างกลับไปแทนที่จะได้เปิดงานจริง
+  for (const m of ['เพิ่มงาน ติดตั้งโบว์บ้านคุณสมชาย ส่งมอบศุกร์หน้า', 'เพิ่มวันหยุด 31 ธันวาคม สิ้นปี']) {
+    assert.equal(readDraftEdit(m), null, m);
+    assert.equal(looksLikeEdit(m), false, m);
+  }
+});
+
+test('ก๊อปทั้งบรรทัดจากใบร่างมาวางกลับ = แทนที่ทั้งแถว', () => {
+  // ทั้งสองรูปนี้มาจากไลน์จริง ใบ QT241069014 — เจ้าของร้านก๊อปบรรทัดที่บอตพิมพ์
+  // ออกมาเอง แล้ววางกลับพร้อมแก้ตัวเลข ยอด "= 300.00" ท้ายบรรทัดเป็นของบอต ไม่ใช่คำสั่ง
+  const doc = draft();
+  doc.lines[2] = { name: 'ข้อความ (20*50cm. 200฿/จุด)', note: null, qty: 1, unit_price: 20000, amount: 20000 };
+
+  const a = edit('แก้รายการที่3 ข้อความ (20*60cm. 200฿/จุด) 1 × 300.00 = 300.00', doc);
+  assert.deepEqual(
+    { ...a.base.items[2] },
+    { name: 'ข้อความ (20*60cm. 200฿/จุด)', note: null, qty: 1, unit_price: 300 },
+  );
+  assert.match(a.headline, /แทนที่ข้อ 3/);
+
+  // มี "เป็น" คั่น — ฝั่งซ้ายคือบรรทัดเดิมไว้ค้น ฝั่งขวาคือบรรทัดใหม่
+  // ฝั่งขวาพิมพ์มาแค่วงเล็บขนาด ต้องได้ชื่อเดิมติดมาด้วย ไม่ใช่สินค้าชื่อ "(20*60cm...)"
+  const b = edit('แก้รายการ ข้อความ (20*50cm. 200฿/จุด) 1 × 200.00 = 200.00 เป็น (20*60cm. 200฿/จุด) 2 × 400.00 = 400.00', doc);
+  assert.equal(b.base.items[2].name, 'ข้อความ (20*60cm. 200฿/จุด)');
+  assert.equal(b.base.items[2].qty, 2);
+  assert.equal(b.base.items[2].unit_price, 400);
+
+  // ไม่มี "เป็น" และวงเล็บไม่ตรงของเดิม — ค้นด้วยชื่อหน้าวงเล็บแทน
+  const c = edit('แก้ ข้อความ (20*60cm. 200฿/จุด) 2 × 400.00', doc);
+  assert.equal(c.base.items[2].unit_price, 400);
+});
+
+test('"แก้หมายเหตุ ส่ง 2 x 450" ยังเป็นหมายเหตุ ไม่ใช่การแทนที่บรรทัด', () => {
+  assert.equal(edit('แก้หมายเหตุ ส่ง 2 x 450').base.note, 'ส่ง 2 x 450');
+});

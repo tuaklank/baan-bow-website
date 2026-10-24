@@ -1,0 +1,60 @@
+# Worker ระบบเอกสาร + ติดตามงาน ของ baanbow.online
+# แยกจาก deploy ของหน้าเว็บโดยสิ้นเชิง — ผูกแค่ 6 route ข้างล่าง
+# path อื่นทั้งหมด (/, styles.css, /design-tool/*, assets) ยังไปที่ deploy เดิมเหมือนเดิม
+name = "baanbow-office"
+main = "src/index.js"
+compatibility_date = "2026-10-18"
+# @anthropic-ai/sdk ต้องการ shim ของ node builtin บน Workers
+compatibility_flags = ["nodejs_compat"]
+
+# เวลาไทย = UTC+7 (Cloudflare รับ cron เป็น UTC เท่านั้น)
+#   01:00 UTC = 08:00 น. ไทย — วางแผนงานวันนี้
+#   10:00 UTC = 17:00 น. ไทย — ทวงงานค้างก่อนเลิกงาน
+# แก้เวลาแล้วต้องแก้ CRON_MORNING / CRON_EVENING ใน src/config.js ให้ตรงกันด้วย
+#
+# ไม่มีรอบหาลูกค้ามุ่งหวังโดยตั้งใจ — ค้นเว็บรอบละ 7-15 บาท ถ้ารันทุกวันโดยไม่ได้ตามต่อ
+# ก็เสียเงินเปล่า จึงให้สั่งเองทางไลน์ด้วยคำว่า "หาลูกค้า" ตอนที่อยากได้งานเพิ่มเท่านั้น
+[triggers]
+crons = ["0 1 * * *", "0 10 * * *"]
+
+# เก็บ log ไว้ 3 วัน ไม่งั้นต้องนั่งเปิด wrangler tail ดักสดตอนเจ้าของร้านพิมพ์พอดี
+# ซึ่งเป็นไปไม่ได้ในทางปฏิบัติ — ปัญหาที่อยากดูส่วนใหญ่เกิดตอนไม่มีใครดูอยู่
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+CLAUDE_MODEL = "claude-sonnet-5-5"
+BASE_URL = "https://www.baanbow.online"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baanbow-office"
+database_id = "ea3274f5-48d7-4d4a-a48d-b8a317b557cb"
+migrations_dir = "migrations"
+
+# 6 เส้น ครบทั้ง apex และ www เพราะเว็บเสิร์ฟ 200 ทั้งสองโฮสต์ ไม่ redirect หากัน
+# ถ้าผูกแค่ apex แล้ว LINE ยิง webhook มาที่ www จะตก 404 เงียบๆ
+[[routes]]
+pattern = "baanbow.online/webhook"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "www.baanbow.online/webhook"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "baanbow.online/d/*"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "www.baanbow.online/d/*"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "baanbow.online/admin*"
+zone_name = "baanbow.online"
+
+[[routes]]
+pattern = "www.baanbow.online/admin*"
+zone_name = "baanbow.online"

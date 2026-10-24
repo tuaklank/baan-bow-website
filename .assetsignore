@@ -1,0 +1,14 @@
+# ไฟล์ที่ห้ามอัปขึ้นเป็น static asset ของเว็บ baanbow.online
+# เว็บนี้เสิร์ฟทั้งโฟลเดอร์เป็นไฟล์ static (เช็คได้: https://www.baanbow.online/.gitignore โหลดได้)
+# ถ้าไม่กันไว้ โค้ดของ Worker ระบบเอกสารจะเปิดอ่านได้จากเน็ตที่ /worker/src/...
+worker/
+node_modules/
+.wrangler/
+.claude/
+uploads/
+design_handoff_baanbow_site/
+*.zip
+
+# หน้าเทมเพลตเอกสาร A4 — เก็บไว้ใน repo แต่ห้ามขึ้นเว็บ
+# ข้างในมีเลขผู้เสียภาษีกับเบอร์ของร้าน ไม่ควรมีหน้าลอยให้ค้นเจอที่ /baanbow-doc-a4%20(1).html
+baanbow-doc-a4 (1).html
