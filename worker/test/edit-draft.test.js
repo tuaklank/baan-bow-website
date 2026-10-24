@@ -50,6 +50,25 @@ test('แก้ราคาข้อเดียว ร่างใหม่ค�
   assert.equal((await pendingDoc(env)).total, 1220000);
 });
 
+test('เรียกสินค้าด้วยชื่อแบบที่เจ้าของร้านพิมพ์จริง', async () => {
+  // ข้อความนี้เคยหลุดไปหา AI แล้วได้เมนูช่วยเหลือกลับมา เพราะตอนแรกบังคับให้บอกเลขข้อ
+  const env = await withDraft();
+  const reply = await say(env, 'แก้สายคาด เป็นราคา 5000 บาท');
+  assert.match(reply, /✏️ แก้ราคาข้อ 2/);
+  assert.match(reply, /รวมทั้งสิ้น 12,700\.00 บาท/);
+  assert.equal((await pendingDoc(env)).lines[1].unit_price, 500000);
+});
+
+test('ลบรายการด้วยชื่อ และชื่อที่กำกวมจะถูกถามกลับ', async () => {
+  const env = await withDraft();
+  assert.match(await say(env, 'ลบซิลความ'), /ลบข้อ 3/);
+  assert.equal((await pendingDoc(env)).lines.length, 2);
+  // เหลือ "โบว์ขนาด..." กับ "สายคาด..." — คำว่า "ล้วน" อยู่ในทั้งสองชื่อ
+  const ask = await say(env, 'แก้ล้วน ราคา 100');
+  assert.match(ask, /หลายรายการ/);
+  assert.equal((await pendingDoc(env)).lines.length, 2);
+});
+
 test('ลบรายการที่ลูกค้าไม่เอา โดยไม่ต้องพิมพ์ทั้งใบใหม่', async () => {
   const env = await withDraft();
   const reply = await say(env, 'ลบข้อ 3');
@@ -144,12 +163,12 @@ test('อ้างข้อที่ไม่มี ตอบกลับตร�
 
 test('พิมพ์ "แก้" ได้วิธีแก้ ไม่ต้องมีร่างรออยู่ก็ดูได้', async () => {
   const env = { DB: freshDb(), ALLOWED_USER_IDS: UID };
-  assert.match(await say(env, 'แก้'), /แก้ข้อ 2 ราคา 4500/);
+  assert.match(await say(env, 'แก้'), /แก้สายคาด เป็นราคา 5000/);
 });
 
 test('ใบร่างบอกวิธีแก้ไว้ในตัว เจ้าของร้านจะได้ไม่ต้องจำ', async () => {
   const env = await withDraft();
   const reply = await say(env, 'ลบข้อ 3');
-  assert.match(reply, /แก้ข้อ 2 ราคา 4500/);
+  assert.match(reply, /แก้โบว์ขนาด เป็นราคา 5000/);
   assert.match(reply, /พิมพ์ "แก้" ดูทั้งหมด/);
 });

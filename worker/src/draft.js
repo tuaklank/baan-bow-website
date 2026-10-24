@@ -10,13 +10,15 @@ import { TYPES, SELLERS, WHT_ALLOWED_BP } from './config.js';
 /** ข้อความสั้นๆ ที่ตอบกลับเมื่อผู้ใช้พิมพ์ "แก้" เฉยๆ หรือพิมพ์คำสั่งที่อ่านไม่ออก */
 export const EDIT_HELP = `แก้ร่างที่รออยู่ได้ทุกช่อง (ไม่ต้องพิมพ์ใหม่ทั้งก้อน)
 
-รายการสินค้า
-• แก้ข้อ 2 ราคา 4500
-• แก้ข้อ 2 จำนวน 3
-• แก้ข้อ 2 ชื่อ สายคาด แดงล้วนผ้า 1 ชั้น
-• แก้ข้อ 2 หมายเหตุ ยาว 26 เมตร
-• ลบข้อ 4
-• เพิ่มข้อ ค่าส่ง 350        (หรือ  เพิ่มข้อ โบว์แดง 2 x 450)
+รายการสินค้า — เรียกด้วยชื่อหรือเลขข้อก็ได้
+• แก้สายคาด เป็นราคา 5000     (หรือ  แก้ข้อ 2 ราคา 5000)
+• แก้สายคาด จำนวน 3
+• แก้สายคาด ชื่อ สายคาด แดงล้วนผ้า 1 ชั้น
+• แก้สายคาด หมายเหตุ ยาว 26 เมตร
+• ลบซิลความ                  (หรือ  ลบข้อ 4)
+• เพิ่มข้อ ค่าส่ง 350          (หรือ  เพิ่มข้อ โบว์แดง 2 x 450)
+
+ชื่อพิมพ์แค่บางส่วนก็ได้ ถ้าไปตรงหลายรายการระบบจะถามว่าข้อไหน
 
 ลูกค้า
 • แก้ชื่อลูกค้า หจก. เช้าเทิร์น มีเดีย
@@ -93,6 +95,13 @@ class EditError extends Error {}
 const fail = (msg) => { throw new EditError(msg); };
 export const isEditError = (e) => e instanceof EditError;
 
+/**
+ * อ้างชื่อรายการที่ไม่มีในร่าง = ข้อความนี้คงไม่ใช่คำสั่งแก้ร่าง ("แก้รายจ่าย 12 ค่าส่ง 80")
+ * ชั้นบนจะปล่อยให้ไหลไปทางปกติต่อ ไม่ใช่ตอบว่าแก้ไม่ได้
+ */
+class NotAnEdit extends Error {}
+export const isNotAnEdit = (e) => e instanceof NotAnEdit;
+
 /** หยิบรายการลำดับที่ n (เริ่มนับ 1) — เกินช่วงให้บอกว่ามีกี่ข้อ */
 function itemAt(base, n) {
   const i = Number(n) - 1;
@@ -100,6 +109,74 @@ function itemAt(base, n) {
     fail(`ร่างนี้มี ${base.items.length} รายการ ไม่มีข้อ ${n} ครับ`);
   }
   return base.items[i];
+}
+
+const squash = (s) => String(s ?? '').toLowerCase().replace(/\s/g, '');
+
+/**
+ * หารายการจากชื่อที่พิมพ์มาบางส่วน ("สายคาด" -> "สายคาด แดงล้วนผ้า 2 ชั้นยาว 26เมตร")
+ * เจ้าของร้านเรียกของด้วยชื่อ ไม่ได้นับเลขข้อในหัว จึงต้องรับแบบนี้ด้วย
+ * เจอหลายรายการ = ไม่เดา ให้ระบุเลขข้อแทน
+ */
+function itemByName(base, fragment) {
+  const q = squash(fragment);
+  if (!q) throw new NotAnEdit();
+  const hits = base.items
+    .map((it, i) => ({ it, no: i + 1 }))
+    .filter(({ it }) => squash(it.name).includes(q));
+  if (hits.length === 0) throw new NotAnEdit();
+  if (hits.length > 1) {
+    const list = hits.map(({ it, no }) => `  ข้อ ${no} ${it.name}`).join('\n');
+    fail(`มีหลายรายการที่มีคำว่า "${fragment}" ครับ ระบุเลขข้อแทน\n${list}`);
+  }
+  return hits[0];
+}
+
+/**
+ * อ่านส่วนที่บอกว่าจะแก้อะไรเป็นอะไร จากข้อความที่ตามหลังชื่อรายการ
+ * รับคำเชื่อม "เป็น" ได้ทุกตำแหน่ง และไม่บอกชื่อช่องมาแต่ให้ตัวเลขล้วน = ราคา
+ *   "เป็นราคา 5000 บาท"  "ราคา เป็น 5000"  "จำนวน 3"  "5000"
+ */
+function readItemChange(rest) {
+  const s = String(rest ?? '').trim().replace(/^เป็น ?/, '');
+  const m = s.match(/^(ราคา(?:ต่อหน่วย)?|จำนวน|ชื่อ|หมายเหตุ) ?(.*)$/);
+  if (m) {
+    const field = m[1].startsWith('ราคา') ? 'ราคา' : m[1];
+    return { field, raw: m[2].replace(/^เป็น ?/, '').trim() };
+  }
+  if (readMoney(s) !== null) return { field: 'ราคา', raw: s };
+  return null;
+}
+
+/** ตัดรายการออกจากร่าง — ใช้ร่วมกันทั้งแบบอ้างเลขข้อและแบบอ้างชื่อ */
+function removeItem(base, it, no) {
+  if (base.items.length === 1) fail('เอกสารต้องมีอย่างน้อย 1 รายการ ลบข้อสุดท้ายไม่ได้ครับ');
+  base.items.splice(no - 1, 1);
+  return `ลบข้อ ${no} (${it.name}) แล้ว`;
+}
+
+/** แก้ช่องหนึ่งของรายการหนึ่ง — ใช้ร่วมกันทั้งแบบอ้างเลขข้อและแบบอ้างชื่อ */
+function applyItemChange(it, no, field, raw) {
+  if (field === 'ราคา') {
+    const v = readMoney(raw);
+    if (v === null) fail(`อ่านราคาไม่ออกครับ — พิมพ์แบบ "แก้ข้อ ${no} ราคา 4500"`);
+    it.unit_price = v;
+    return `แก้ราคาข้อ ${no} (${it.name}) เป็น ${v.toLocaleString('en-US')}`;
+  }
+  if (field === 'จำนวน') {
+    const v = readMoney(raw);
+    if (v === null || v <= 0) fail(`จำนวนต้องมากกว่า 0 ครับ — พิมพ์แบบ "แก้ข้อ ${no} จำนวน 3"`);
+    it.qty = v;
+    return `แก้จำนวนข้อ ${no} (${it.name}) เป็น ${v}`;
+  }
+  if (field === 'ชื่อ') {
+    const v = raw.trim();
+    if (!v) fail('ชื่อรายการว่างไม่ได้ครับ');
+    it.name = v;
+    return `แก้ชื่อข้อ ${no} เป็น "${v}"`;
+  }
+  it.note = raw.trim() || null;   // หมายเหตุ — ว่างได้ = ล้างทิ้ง
+  return it.note ? `แก้หมายเหตุข้อ ${no} เป็น "${it.note}"` : `ล้างหมายเหตุข้อ ${no}`;
 }
 
 // ---------- ช่องข้อความของลูกค้า ----------
@@ -136,48 +213,20 @@ export function readDraftEdit(text) {
     return { apply: () => fail(EDIT_HELP) };
   }
 
-  // ---------- รายการสินค้า ----------
-  let m = msg.match(new RegExp(`^${CMD} ?${ITEM} ?(\\d+) (ราคา|จำนวน|ชื่อ|หมายเหตุ) ?(.*)$`));
+  // ---------- รายการสินค้า: อ้างด้วยเลขข้อ ----------
+  let m = msg.match(new RegExp(`^${CMD} ?${ITEM} ?(\\d+) (.+)$`));
   if (m) {
-    const [, n, field, raw] = m;
-    return {
-      apply(base) {
-        const it = itemAt(base, n);
-        if (field === 'ราคา') {
-          const v = readMoney(raw);
-          if (v === null) fail(`อ่านราคาไม่ออกครับ — พิมพ์แบบ "แก้ข้อ ${n} ราคา 4500"`);
-          it.unit_price = v;
-          return `แก้ราคาข้อ ${n} (${it.name}) เป็น ${v.toLocaleString('en-US')}`;
-        }
-        if (field === 'จำนวน') {
-          const v = readMoney(raw);
-          if (v === null || v <= 0) fail(`จำนวนต้องมากกว่า 0 ครับ — พิมพ์แบบ "แก้ข้อ ${n} จำนวน 3"`);
-          it.qty = v;
-          return `แก้จำนวนข้อ ${n} (${it.name}) เป็น ${v}`;
-        }
-        if (field === 'ชื่อ') {
-          const v = raw.trim();
-          if (!v) fail('ชื่อรายการว่างไม่ได้ครับ');
-          it.name = v;
-          return `แก้ชื่อข้อ ${n} เป็น "${v}"`;
-        }
-        it.note = raw.trim() || null;   // หมายเหตุ — ว่างได้ = ล้างทิ้ง
-        return it.note ? `แก้หมายเหตุข้อ ${n} เป็น "${it.note}"` : `ล้างหมายเหตุข้อ ${n}`;
-      },
-    };
+    const [, n, rest] = m;
+    const change = readItemChange(rest);
+    if (change) {
+      return { apply: (base) => applyItemChange(itemAt(base, n), n, change.field, change.raw) };
+    }
   }
 
   m = msg.match(new RegExp(`^(?:ลบ|ตัด|เอาออก) ?${ITEM} ?(\\d+)$`));
   if (m) {
     const n = m[1];
-    return {
-      apply(base) {
-        const it = itemAt(base, n);
-        if (base.items.length === 1) fail('เอกสารต้องมีอย่างน้อย 1 รายการ ลบข้อสุดท้ายไม่ได้ครับ');
-        base.items.splice(Number(n) - 1, 1);
-        return `ลบข้อ ${n} (${it.name}) แล้ว`;
-      },
-    };
+    return { apply: (base) => removeItem(base, itemAt(base, n), Number(n)) };
   }
 
   // เพิ่มข้อ <ชื่อ> [<จำนวน> x] <ราคา>   — ไม่บอกจำนวน = 1 ชิ้น
@@ -201,10 +250,46 @@ export function readDraftEdit(text) {
   // ไม่งั้นตัวแยกชื่อช่องจะตัดได้แค่ "หัก" แล้วเหลือ "ณ ที่จ่าย 3" เป็นค่า
   const flat = msg.replace(/หัก ?ณ ?ที่ ?จ่าย/g, 'หักณที่จ่าย');
   m = flat.match(new RegExp(`^${CMD} ?(.+?)(?: (.*))?$`));
-  if (!m) return null;
-  const key = m[1].replace(/\s/g, '');
-  const raw = (m[2] ?? '').trim();
+  const named = m && readFieldEdit(m[1].replace(/\s/g, ''), (m[2] ?? '').trim());
+  if (named) return named;
 
+  // ---------- รายการสินค้า: อ้างด้วยชื่อ ("แก้สายคาด เป็นราคา 5000 บาท") ----------
+  // ต้องอยู่ท้ายสุด ให้ชื่อช่องที่รู้จักจับก่อนเสมอ
+  // ไม่งั้น "แก้ที่อยู่ ... 84000" จะกลายเป็นการหาสินค้าชื่อ "ที่อยู่ ..." แล้วตั้งราคา 84000
+  m = msg.match(new RegExp(
+    // ต้องมีช่องว่างคั่นชื่อกับค่าเสมอ ไม่งั้น "แก้วันที่ 15/10" จะถูกหั่นเป็น
+    // ชื่อ "วันที่ 15/1" กับราคา "0" ซึ่งเป็นการตัดกลางตัวเลขที่ไม่มีใครตั้งใจ
+    `^${CMD} ?(.+?) (เป็น ?.+|ราคา.*|จำนวน.*|ชื่อ .+|หมายเหตุ.*|[\\d,]+(?:\\.\\d+)? ?(?:บาท|฿)?)$`,
+  ));
+  if (m) {
+    const [, name, rest] = m;
+    const change = readItemChange(rest);
+    if (change) {
+      return {
+        apply(base) {
+          const { it, no } = itemByName(base, name);
+          return applyItemChange(it, no, change.field, change.raw);
+        },
+      };
+    }
+  }
+
+  m = msg.match(/^(?:ลบ|ตัด|เอาออก) ?(.+)$/);
+  if (m) {
+    const name = m[1];
+    return {
+      apply(base) {
+        const { it, no } = itemByName(base, name);
+        return removeItem(base, it, no);
+      },
+    };
+  }
+
+  return null;   // ไม่ใช่คำสั่งแก้ร่าง ปล่อยไปทางอื่น
+}
+
+/** ช่องที่เรียกด้วยชื่อช่องตรงๆ ("แก้ที่อยู่ ...", "แก้ส่วนลด 500") */
+function readFieldEdit(key, raw) {
   for (const [re, field, label] of CUSTOMER_FIELDS) {
     if (!re.test(key)) continue;
     return {
@@ -277,5 +362,5 @@ export function readDraftEdit(text) {
     };
   }
 
-  return null;   // ขึ้นต้นด้วย "แก้" แต่ไม่ใช่ช่องที่รู้จัก ปล่อยไปทางอื่น
+  return null;   // ไม่ใช่ชื่อช่องที่รู้จัก
 }

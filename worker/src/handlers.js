@@ -17,7 +17,7 @@ import {
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
-import { readDraftEdit, draftToBase, isEditError, EDIT_HELP } from './draft.js';
+import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, EDIT_HELP } from './draft.js';
 import { huntLead } from './leads.js';
 import { push } from './line.js';
 import {
@@ -36,7 +36,8 @@ export const HELP = `คำสั่งที่ใช้ได้
 • ...ลงวันที่ 15/10      (ไม่บอกวันที่ = ลงวันนี้ บอกมาก็ลงวันนั้น ย้อนหลังได้)
 
 ✏️ แก้ร่างก่อนยืนยัน (ไม่ต้องพิมพ์ใหม่ทั้งก้อน)
-• แก้ข้อ 2 ราคา 4500   /   แก้ข้อ 2 จำนวน 3   /   ลบข้อ 4   /   เพิ่มข้อ ค่าส่ง 350
+• แก้สายคาด เป็นราคา 5000   (เรียกด้วยชื่อสินค้า หรือ "แก้ข้อ 2 ราคา 5000" ก็ได้)
+• แก้สายคาด จำนวน 3   /   ลบซิลความ   /   เพิ่มข้อ ค่าส่ง 350
 • แก้ที่อยู่ ...   /   แก้เลขภาษี ...   /   แก้ส่วนลด 500   /   แก้ประเภท ใบเสร็จ
 • วันที่ 15/10
 • พิมพ์ "แก้" เพื่อดูวิธีแก้ทุกช่อง
@@ -161,7 +162,7 @@ function docSummary(d) {
     d.wht_rate ? `หัก ณ ที่จ่าย ${d.wht_rate / 100}% −${fmtBaht(d.wht)}\nยอดชำระสุทธิ ${fmtBaht(d.net_payable)} บาท` : null,
     '',
     'พิมพ์ "ยืนยัน" เพื่อออกเอกสาร / "ยกเลิก" เพื่อทิ้งรายการนี้',
-    'แก้ได้ทุกช่องโดยไม่ต้องพิมพ์ใหม่ เช่น "แก้ข้อ 2 ราคา 4500" / "ลบข้อ 3" / "วันที่ 15/10" — พิมพ์ "แก้" ดูทั้งหมด',
+    `แก้ได้ทุกช่องโดยไม่ต้องพิมพ์ใหม่ เช่น "แก้${d.lines[0].name.split(' ')[0]} เป็นราคา 5000" / "ลบข้อ 1" / "วันที่ 15/10" — พิมพ์ "แก้" ดูทั้งหมด`,
   ];
   return parts.filter((x) => x !== null).join('\n');
 }
@@ -448,6 +449,8 @@ async function doEditDraft(env, uid, msg) {
   try {
     headline = edit.apply(base);
   } catch (e) {
+    // อ้างชื่อรายการที่ไม่มีในร่าง = ไม่ใช่คำสั่งแก้ร่าง ปล่อยไปทางปกติ (เช่น "แก้รายจ่าย 12 ...")
+    if (isNotAnEdit(e)) return null;
     if (isEditError(e)) return e.message;
     throw e;
   }

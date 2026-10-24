@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readDraftEdit, draftToBase, readMoney, readSeller, readDocType, isEditError, EDIT_HELP,
+  readDraftEdit, draftToBase, readMoney, readSeller, readDocType, isEditError, isNotAnEdit, EDIT_HELP,
 } from '../src/draft.js';
 import { compute } from '../src/money.js';
 
@@ -94,6 +94,44 @@ test('ลบรายการ และเพิ่มรายการให�
   assert.equal(many.items[3].unit_price, 450);
 });
 
+test('เรียกรายการด้วยชื่อได้ ไม่ต้องนับเลขข้อในหัว', () => {
+  // ข้อความจริงที่เจ้าของร้านพิมพ์มาแล้วเคยหลุดไปหา AI เพราะไม่ได้บอกเลขข้อ
+  const { base, headline } = edit('แก้สายคาด เป็นราคา 5000 บาท');
+  assert.equal(base.items[1].unit_price, 5000);
+  assert.match(headline, /แก้ราคาข้อ 2/);
+
+  assert.equal(edit('แก้สายคาด ราคา 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้สายคาด เป็น 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้สายคาด 4500').base.items[1].unit_price, 4500);
+  assert.equal(edit('แก้สายคาด จำนวน 3').base.items[1].qty, 3);
+  assert.equal(edit('แก้ซิลความ หมายเหตุ ติดบนล่าง').base.items[2].note, 'ติดบนล่าง');
+  assert.equal(edit('ลบซิลความ').base.items.length, 2);
+});
+
+test('ไม่บอกชื่อช่องแต่ให้ตัวเลขมา ถือว่าเป็นราคา', () => {
+  assert.equal(edit('แก้ข้อ 2 เป็น 5000').base.items[1].unit_price, 5000);
+  assert.equal(edit('แก้ข้อ 2 5,000 บาท').base.items[1].unit_price, 5000);
+});
+
+test('ชื่อที่ตรงหลายรายการ ไม่เดาให้ ถามว่าข้อไหน', () => {
+  const two = draft();
+  two.lines[0].name = 'โบว์แดง เล็ก';
+  two.lines[1].name = 'โบว์แดง ใหญ่';
+  const msg = rejects('แก้โบว์แดง ราคา 100', two);
+  assert.match(msg, /หลายรายการ/);
+  assert.match(msg, /ข้อ 1 โบว์แดง เล็ก/);
+  assert.match(msg, /ข้อ 2 โบว์แดง ใหญ่/);
+});
+
+test('ชื่อที่ไม่มีในร่าง = ไม่ใช่คำสั่งแก้ร่าง ปล่อยไปทางอื่น', () => {
+  // สำคัญมาก ไม่งั้น "แก้รายจ่าย 12 ค่าส่ง 80" จะถูกกินไปตอนมีร่างค้างอยู่
+  for (const m of ['แก้รายจ่าย 12 ค่าส่ง 80', 'แก้ของที่ไม่มี ราคา 100', 'ลบรายจ่าย 12']) {
+    const e = readDraftEdit(m);
+    if (!e) continue;                                  // ไม่ตรงรูปคำสั่งเลยก็จบ
+    assert.throws(() => e.apply(draftToBase(draft())), isNotAnEdit, m);
+  }
+});
+
 test('ลบรายการสุดท้ายไม่ได้ เอกสารต้องมีอย่างน้อย 1 รายการ', () => {
   const one = draft();
   one.lines = [one.lines[0]];
@@ -156,7 +194,6 @@ test('ข้อความที่ไม่ใช่คำสั่งแก�
     'ยืนยัน',
     'สต๊อก',
     'ทำใบเสนอราคา คุณสมชาย โบว์แดง 2 ชิ้น ชิ้นละ 500',
-    'แก้รายจ่าย 12 ค่าส่ง 80',        // เป็นคำสั่งแก้รายจ่าย ไม่ใช่แก้ร่าง
     'แก้วันที่ 15/10',                 // มีทางของตัวเองอยู่แล้ว (doSetIssueDate)
     'เพิ่มงาน ติดตั้งโบว์',             // อย่าไปชนกับคำสั่งเพิ่มงาน
     'เพิ่มวันหยุด 31 ธันวาคม สิ้นปี',
@@ -172,7 +209,7 @@ test('"เพิ่มข้อความ ..." เป็นชื่อสิ�
 
 test('พิมพ์ "แก้" เฉยๆ ได้วิธีแก้ทั้งหมด', () => {
   assert.equal(rejects('แก้'), EDIT_HELP);
-  assert.match(EDIT_HELP, /แก้ข้อ 2 ราคา 4500/);
+  assert.match(EDIT_HELP, /แก้สายคาด เป็นราคา 5000/);
 });
 
 test('ตัวอ่านย่อย — เงิน ผู้ขาย ประเภทเอกสาร', () => {
