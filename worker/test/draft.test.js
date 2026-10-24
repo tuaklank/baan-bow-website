@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readDraftEdit, draftToBase, readMoney, readSeller, readDocType, isEditError, isNotAnEdit, EDIT_HELP,
+  readDraftEdit, draftToBase, readMoney, readSeller, readDocType, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP,
 } from '../src/draft.js';
 import { compute } from '../src/money.js';
 
@@ -106,6 +106,29 @@ test('เรียกรายการด้วยชื่อได้ ไม�
   assert.equal(edit('แก้สายคาด จำนวน 3').base.items[1].qty, 3);
   assert.equal(edit('แก้ซิลความ หมายเหตุ ติดบนล่าง').base.items[2].note, 'ติดบนล่าง');
   assert.equal(edit('ลบซิลความ').base.items.length, 2);
+});
+
+test('พิมพ์ชื่อช่องติดกับค่า หรือติดกับ "เป็น" ก็อ่านออก', () => {
+  // เวลารีบ เจ้าของร้านไม่เว้นวรรค — ของจริงเคยส่งมาแบบนี้แล้วหลุดไปหา AI
+  assert.equal(edit('แก้เลขภาษี0-8335-47001-26-4').base.customer.tax_id, '0-8335-47001-26-4');
+  assert.equal(edit('แก้ เลขภาษี เป็น0-8335-47001-26-4').base.customer.tax_id, '0-8335-47001-26-4');
+  assert.equal(edit('แก้ส่วนลด500').base.discount, 500);
+  assert.equal(edit('แก้ที่อยู่151 ม.1 ถ.วัดประดู่').base.customer.address, '151 ม.1 ถ.วัดประดู่');
+  assert.equal(edit('แก้ ข้อ2 เป็นราคา 4500 บาท').base.items[1].unit_price, 4500);
+});
+
+test('บอกราคาเดิมมาด้วย ("จาก 6000 เป็น 5000") ก็ยังอ่านออก', () => {
+  assert.equal(edit('แก้สายคาดจาก6000 เป็น 5000บาท').base.items[1].unit_price, 5000);
+  assert.equal(edit('แก้สายคาด จาก 6,000 เป็น 5000').base.items[1].unit_price, 5000);
+});
+
+test('ตั้งใจแก้ร่างแน่ๆ แต่อ่านไม่ออก ต้องไม่ถูกส่งไปหา AI', () => {
+  assert.equal(looksLikeEdit('แก้สายคาดกับโบว์ ลดอย่างละร้อย'), true);
+  assert.equal(looksLikeEdit('ลบอันที่สอง'), true);
+  // คำสั่งแก้รายจ่ายมีทางของตัวเอง ต้องปล่อยให้ AI อ่านเหมือนเดิม
+  assert.equal(looksLikeEdit('แก้รายจ่าย 12 ค่าส่ง 80'), false);
+  assert.equal(looksLikeEdit('ทำใบเสนอราคา คุณสมชาย'), false);
+  assert.equal(looksLikeEdit('ยืนยัน'), false);
 });
 
 test('ไม่บอกชื่อช่องแต่ให้ตัวเลขมา ถือว่าเป็นราคา', () => {

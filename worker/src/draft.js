@@ -38,6 +38,16 @@ export const EDIT_HELP = `แก้ร่างที่รออยู่ได
 
 ช่องที่ปล่อยว่างได้ พิมพ์คำสั่งโดยไม่ใส่ค่าต่อท้าย = ล้างช่องนั้น`;
 
+/**
+ * ข้อความที่ "ตั้งใจจะแก้ร่างแน่ๆ" แต่เราอ่านไม่ออก
+ * ตอบวิธีแก้กลับไปดีกว่าปล่อยให้ไปถาม AI แล้วได้เมนูช่วยเหลือ ซึ่งเสียเงินและไม่ช่วยอะไร
+ * ยกเว้นคำสั่งแก้รายจ่าย ซึ่งมีทางของตัวเองและต้องให้ AI อ่าน
+ */
+export const looksLikeEdit = (text) => {
+  const s = String(text ?? '').trim();
+  return /^(แก้ไข|แก้|เปลี่ยน|ลบ|ตัด|เอาออก)/.test(s) && !/รายจ่าย/.test(s);
+};
+
 /** "4,500" / "4500.50" / "350 บาท" -> จำนวนบาทเป็น number, null ถ้าอ่านไม่ออก */
 export function readMoney(raw) {
   const s = String(raw ?? '').replace(/บาท|[,\s฿]/g, '');
@@ -182,19 +192,35 @@ function applyItemChange(it, no, field, raw) {
 // ---------- ช่องข้อความของลูกค้า ----------
 // คำที่ผู้ใช้พิมพ์ -> ช่องใน customer (ล้างค่าได้ด้วยการไม่ใส่ค่าต่อท้าย)
 const CUSTOMER_FIELDS = [
-  [/^(?:ชื่อลูกค้า|ลูกค้า|ชื่อ)$/, 'name', 'ชื่อลูกค้า'],
-  [/^(?:ที่อยู่|ที่อยู่ลูกค้า)$/, 'address', 'ที่อยู่'],
-  [/^(?:เลขภาษี|เลขผู้เสียภาษี|เลขประจำตัวผู้เสียภาษี|taxid)$/i, 'tax_id', 'เลขภาษี'],
-  [/^(?:สาขา)$/, 'branch', 'สาขา'],
-  [/^(?:ผู้ติดต่อ|คนติดต่อ)$/, 'contact', 'ผู้ติดต่อ'],
-  [/^(?:เบอร์|โทร|เบอร์โทร|โทรศัพท์)$/, 'phone', 'เบอร์โทร'],
+  [['ชื่อลูกค้า', 'ลูกค้า', 'ชื่อ'], 'name', 'ชื่อลูกค้า'],
+  [['ที่อยู่ลูกค้า', 'ที่อยู่'], 'address', 'ที่อยู่'],
+  [['เลขประจำตัวผู้เสียภาษี', 'เลขผู้เสียภาษี', 'เลขภาษี', 'taxid'], 'tax_id', 'เลขภาษี'],
+  [['สาขา'], 'branch', 'สาขา'],
+  [['ผู้ติดต่อ', 'คนติดต่อ'], 'contact', 'ผู้ติดต่อ'],
+  [['เบอร์โทร', 'เบอร์', 'โทรศัพท์', 'โทร'], 'phone', 'เบอร์โทร'],
 ];
 
 // ---------- ช่องข้อความของตัวเอกสาร ----------
 const DOC_TEXT_FIELDS = [
-  [/^(?:หมายเหตุ|โน้ต)$/, 'note', 'หมายเหตุ'],
-  [/^(?:เงื่อนไขชำระ|เงื่อนไขการชำระ|การชำระเงิน|เงื่อนไข)$/, 'payment_terms', 'เงื่อนไขชำระ'],
+  [['หมายเหตุ', 'โน้ต'], 'note', 'หมายเหตุ'],
+  [['เงื่อนไขการชำระ', 'เงื่อนไขชำระ', 'การชำระเงิน', 'เงื่อนไข'], 'payment_terms', 'เงื่อนไขชำระ'],
 ];
+
+// ช่องที่เหลือซึ่งมีวิธีอ่านค่าเฉพาะตัว (ไม่ได้เก็บข้อความดิบ)
+const DISCOUNT = ['ส่วนลด'];
+const WHT = ['หักณที่จ่าย'];
+const DOC_TYPE = ['ประเภทเอกสาร', 'ประเภท'];
+const SELLER = ['ผู้ขาย', 'ในนาม', 'หัวบิล'];
+
+/**
+ * ชื่อช่องทุกคำ เรียงยาวไปสั้น — ใช้แกะตอนผู้ใช้พิมพ์ชื่อช่องติดกับค่า
+ * ("แก้เลขภาษี0-8335-47001-16-4") ซึ่งเกิดขึ้นจริงบ่อยเวลารีบ
+ * ยาวก่อนเสมอ ไม่งั้น "เลขภาษี" จะถูก "ชื่อ" แย่งไปไม่ได้ แต่ "ประเภทเอกสาร" จะโดน "ประเภท" แย่ง
+ */
+const ALL_FIELD_WORDS = [...CUSTOMER_FIELDS, ...DOC_TEXT_FIELDS]
+  .flatMap(([words]) => words)
+  .concat(DISCOUNT, WHT, DOC_TYPE, SELLER)
+  .sort((a, b) => b.length - a.length);
 
 const CMD = String.raw`(?:แก้ไข|แก้|เปลี่ยน|ตั้ง)`;
 const ITEM = String.raw`(?:ข้อ|รายการ|บรรทัด)`;
@@ -206,7 +232,9 @@ const ITEM = String.raw`(?:ข้อ|รายการ|บรรทัด)`;
  *     (apply อาจ throw EditError ถ้าค่าที่ให้มาใช้ไม่ได้)
  */
 export function readDraftEdit(text) {
-  const msg = String(text ?? '').trim().replace(/\s+/g, ' ');
+  const msg = String(text ?? '').trim().replace(/\s+/g, ' ')
+    // "แก้สายคาดจาก 6000 เป็น 5000" — ราคาเดิมเป็นแค่คำอธิบาย ค่าใหม่อยู่หลัง "เป็น"
+    .replace(/ ?จาก ?[\d,]+(?:\.\d+)? ?(?:บาท|฿)? ?(?=เป็น)/, ' ');
 
   // "แก้" เฉยๆ = ขอดูวิธีแก้
   if (new RegExp(`^${CMD}\\??$`).test(msg)) {
@@ -248,9 +276,13 @@ export function readDraftEdit(text) {
   // ---------- ช่องอื่นๆ ----------
   // "หัก ณ ที่จ่าย" เป็นชื่อช่องเดียวที่มีช่องว่างอยู่ข้างใน รวบให้ติดกันก่อน
   // ไม่งั้นตัวแยกชื่อช่องจะตัดได้แค่ "หัก" แล้วเหลือ "ณ ที่จ่าย 3" เป็นค่า
-  const flat = msg.replace(/หัก ?ณ ?ที่ ?จ่าย/g, 'หักณที่จ่าย');
+  const flat = msg
+    .replace(/หัก ?ณ ?ที่ ?จ่าย/g, 'หักณที่จ่าย')
+    // ชื่อช่องติดกับค่า ("แก้เลขภาษี0-8335-...") — แทรกช่องว่างคืนให้ก่อนแกะ
+    .replace(new RegExp(`^(${CMD}) ?(${ALL_FIELD_WORDS.join('|')}) ?`, 'i'), '$1 $2 ');
   m = flat.match(new RegExp(`^${CMD} ?(.+?)(?: (.*))?$`));
-  const named = m && readFieldEdit(m[1].replace(/\s/g, ''), (m[2] ?? '').trim());
+  // "เป็น" เป็นคำเชื่อม ไม่ใช่ส่วนหนึ่งของค่า ("แก้เลขภาษี เป็น0-8335-...")
+  const named = m && readFieldEdit(m[1].replace(/\s/g, ''), (m[2] ?? '').trim().replace(/^เป็น ?/, ''));
   if (named) return named;
 
   // ---------- รายการสินค้า: อ้างด้วยชื่อ ("แก้สายคาด เป็นราคา 5000 บาท") ----------
@@ -290,8 +322,8 @@ export function readDraftEdit(text) {
 
 /** ช่องที่เรียกด้วยชื่อช่องตรงๆ ("แก้ที่อยู่ ...", "แก้ส่วนลด 500") */
 function readFieldEdit(key, raw) {
-  for (const [re, field, label] of CUSTOMER_FIELDS) {
-    if (!re.test(key)) continue;
+  for (const [words, field, label] of CUSTOMER_FIELDS) {
+    if (!words.includes(key)) continue;
     return {
       apply(base) {
         base.customer[field] = raw || null;
@@ -301,8 +333,8 @@ function readFieldEdit(key, raw) {
     };
   }
 
-  for (const [re, field, label] of DOC_TEXT_FIELDS) {
-    if (!re.test(key)) continue;
+  for (const [words, field, label] of DOC_TEXT_FIELDS) {
+    if (!words.includes(key)) continue;
     return {
       apply(base) {
         base[field] = raw || null;
@@ -311,7 +343,7 @@ function readFieldEdit(key, raw) {
     };
   }
 
-  if (/^ส่วนลด$/.test(key)) {
+  if (DISCOUNT.includes(key)) {
     return {
       apply(base) {
         const v = raw === '' ? 0 : readMoney(raw);
@@ -322,7 +354,7 @@ function readFieldEdit(key, raw) {
     };
   }
 
-  if (/^หักณที่จ่าย$/.test(key)) {
+  if (WHT.includes(key)) {
     return {
       apply(base) {
         const n = readMoney(raw);
@@ -335,7 +367,7 @@ function readFieldEdit(key, raw) {
     };
   }
 
-  if (/^ประเภท(เอกสาร)?$/.test(key)) {
+  if (DOC_TYPE.includes(key)) {
     return {
       apply(base) {
         const t = readDocType(raw);
@@ -348,7 +380,7 @@ function readFieldEdit(key, raw) {
     };
   }
 
-  if (/^(ผู้ขาย|ในนาม|หัวบิล)$/.test(key)) {
+  if (SELLER.includes(key)) {
     return {
       apply(base) {
         const s = readSeller(raw);

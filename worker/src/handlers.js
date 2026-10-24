@@ -17,7 +17,7 @@ import {
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
-import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, EDIT_HELP } from './draft.js';
+import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP } from './draft.js';
 import { huntLead } from './leads.js';
 import { push } from './line.js';
 import {
@@ -431,6 +431,20 @@ async function saveDraftFrom(env, uid, base, vat_mode, headline) {
 }
 
 /**
+ * มีร่างรออยู่ และข้อความนี้ดูยังไงก็ตั้งใจจะแก้ร่าง แต่เราแกะไม่ออก
+ * ตอบวิธีแก้กลับไปเลย ไม่ส่งต่อให้ AI — ที่ผ่านมามันตอบเมนูช่วยเหลือกลับมา
+ * ซึ่งเสียทั้งเงินและเวลาของเจ้าของร้านโดยไม่ได้อะไรเลย
+ *
+ * log ข้อความดิบไว้ด้วย (ดูด้วย wrangler tail) เพราะรูปประโยคที่คนพิมพ์จริง
+ * มีมากกว่าที่เดาไว้เสมอ เห็นของจริงแล้วค่อยเติมเข้าไปทีละแบบ
+ */
+function missedEdit(msg) {
+  if (!looksLikeEdit(msg)) return null;
+  console.log('edit miss ' + JSON.stringify(msg));
+  return `ยังอ่านคำสั่งนี้ไม่ออกครับ — ร่างเดิมยังอยู่ ไม่ได้ถูกแก้\n\n${EDIT_HELP}`;
+}
+
+/**
  * แก้ร่างที่รอยืนยันอยู่ทีละช่อง ("แก้ข้อ 2 ราคา 4500", "แก้ที่อยู่ ...", "ลบข้อ 3")
  * อ่านจากข้อความตรงๆ ไม่เรียก AI — เดิมต้อง "ยกเลิก" แล้วพิมพ์ทั้งก้อนใหม่
  * ซึ่งเสียค่าอ่านข้อความเต็มราคาทุกครั้งที่ลูกค้าต่อราคาแค่บรรทัดเดียว
@@ -441,7 +455,7 @@ async function doEditDraft(env, uid, msg) {
   if (p?.kind !== 'doc' && p?.kind !== 'need_vat') return null;
 
   const edit = readDraftEdit(msg);
-  if (!edit) return null;
+  if (!edit) return missedEdit(msg);
 
   // คัดลอกก่อนแก้ ถ้าแก้ไม่สำเร็จกลางทางร่างเดิมในฐานข้อมูลจะไม่ถูกแตะเลย
   const base = p.kind === 'doc' ? draftToBase(p.doc) : JSON.parse(JSON.stringify(p.base));
@@ -450,7 +464,7 @@ async function doEditDraft(env, uid, msg) {
     headline = edit.apply(base);
   } catch (e) {
     // อ้างชื่อรายการที่ไม่มีในร่าง = ไม่ใช่คำสั่งแก้ร่าง ปล่อยไปทางปกติ (เช่น "แก้รายจ่าย 12 ...")
-    if (isNotAnEdit(e)) return null;
+    if (isNotAnEdit(e)) return missedEdit(msg);
     if (isEditError(e)) return e.message;
     throw e;
   }
