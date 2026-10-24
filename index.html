@@ -32,15 +32,18 @@
 
 <section class="hero">
   <video class="hero-video" src="assets/hero-drone.mp4" autoplay muted loop playsinline preload="auto"></video>
+  <button class="hero-sound" type="button" data-hero-sound aria-pressed="false">
+    <span class="hero-sound-icon" aria-hidden="true">&#128263;</span>
+    <span class="hero-sound-label">เปิดเสียง</span>
+  </button>
   <div class="hero-scrim hero-scrim-v"></div>
   <div class="hero-scrim hero-scrim-h"></div>
   <div class="wrap hero-content">
-    <div class="eyebrow-pill reveal">PREMIUM CAR BOW · SINCE 2018</div>
-    <h1 class="reveal">ส่งมอบรถคันใหม่<br><span>ให้สมกับวันสำคัญ</span></h1>
-    <p class="lead reveal">โบว์รถยนต์งานแฮนด์เมด ผ้ากำมะหยี่เกรดพรีเมียม สกรีนชื่อโชว์รูมและข้อความได้ตามต้องการ ติดตั้งง่ายไม่ทิ้งรอยบนตัวรถ</p>
+    <h1 class="reveal"><br>สร้างความประทับใจในวันสำคัญ</h1>
+    <p class="lead reveal">โบว์รถยนต์งานแฮนด์เมด ผ้ากำมะหยี่เกรดพรีเมียม สกรีนชื่อโชว์รูมและ<br><span class="lead-indent">ข้อความได้ตามต้องการ ติดตั้งง่ายไม่ทิ้งรอยบนตัวรถ</span></p>
     <div class="hero-ctas reveal">
-      <a class="btn btn-primary" href="design-tool/index.html">ออกแบบโบว์ของคุณเอง <span aria-hidden="true">&rarr;</span></a>
       <a class="btn btn-ghost" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">ทักไลน์ @baanbow</a>
+      <a class="btn btn-primary" href="design-tool/index.html">ออกแบบโบว์ของคุณเอง <span aria-hidden="true">&rarr;</span></a>
     </div>
     <!-- TODO: ยืนยันกับเจ้าของร้าน - ตัวเลขสถิติทั้ง 3 ตัวยังไม่ได้รับการยืนยัน -->
     <div class="stats reveal">
@@ -89,11 +92,11 @@
   <div class="wrap">
     <div class="section-head reveal">
       <div class="eyebrow">OUR BOWS</div>
-      <h2>เดินชมโชว์รูม 7 แบบ</h2>
+      <h2>ชมโบว์ทั้ง 6 แบบ</h2>
       <p>ลากการ์ดซ้าย-ขวา หรือกดปุ่มลูกศรเพื่อเลื่อนดูโบว์แต่ละแบบ พร้อมรายละเอียดและราคาในการ์ดเดียวกัน</p>
     </div>
 
-    <!-- TODO: ยืนยันกับเจ้าของร้าน - ราคาทั้ง 7 รายการยังไม่ได้รับการยืนยัน -->
+    <!-- TODO: ยืนยันกับเจ้าของร้าน - ราคาทั้ง 6 รายการยังไม่ได้รับการยืนยัน -->
     <div class="slider">
       <div class="slider-track" id="productTrack">
 
@@ -164,24 +167,6 @@
             <div class="p-buy">
               <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">2,900</span><span class="p-unit">บาท</span></span>
-              <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
-            </div>
-          </div>
-        </article>
-
-        <article class="p-card">
-          <div class="p-media">
-            <img src="assets/booth-5.jpg" alt="โบว์ทรงดอกไม้ สีส้ม" loading="lazy" draggable="false">
-          </div>
-          <div class="p-body">
-            <div class="p-info">
-              <div class="p-tag">แบบที่ 3 · สีส้ม</div>
-              <h3 class="p-name">โบว์ทรงดอกไม้ สีส้ม</h3>
-              <p class="p-desc">ทรงดอกไม้ในสีตามแบรนด์ เลือกสีผ้าและสีขอบให้เข้ากับสีรถหรือสีโชว์รูมได้</p>
-            </div>
-            <div class="p-buy">
-              <!-- TODO: ยืนยันกับเจ้าของร้าน -->
-              <span class="p-price-row"><span class="p-price">3,900</span><span class="p-unit">บาท</span></span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
@@ -410,11 +395,42 @@
     if(document.hidden) return;
     document.querySelectorAll('video').forEach(v=>{
       if(!v.paused) return;
-      v.muted = true;
+      // The hero is the only video allowed any sound, so leave its state alone.
+      if(!v.classList.contains('hero-video')) v.muted = true;
       const p = v.play();
       if(p && p.catch) p.catch(()=>{});
     });
   });
+
+  // Hero sound. It starts muted so autoplay is allowed, but whenever anything
+  // unmutes it -- a sound button, native controls -- it comes back quietly
+  // instead of at full volume.
+  (function(){
+    const hero = document.querySelector('.hero-video');
+    if(!hero) return;
+    const QUIET = 0.3;
+    hero.muted = true;
+    hero.volume = QUIET;
+    hero.addEventListener('volumechange', ()=>{
+      if(!hero.muted && hero.volume !== QUIET) hero.volume = QUIET;
+    });
+    document.querySelectorAll('[data-hero-sound]').forEach(btn=>{
+      const icon  = btn.querySelector('.hero-sound-icon');
+      const label = btn.querySelector('.hero-sound-label');
+      const paint = ()=>{
+        const on = !hero.muted;
+        btn.setAttribute('aria-pressed', String(on));
+        if(icon)  icon.textContent  = on ? '🔊' : '🔇';
+        if(label) label.textContent = on ? 'ปิดเสียง' : 'เปิดเสียง';
+      };
+      btn.addEventListener('click', ()=>{
+        hero.muted = !hero.muted;
+        hero.volume = QUIET;
+        paint();
+      });
+      paint();
+    });
+  })();
 
   // product showroom slider
   (function(){
@@ -432,6 +448,7 @@
     const vids = [...track.querySelectorAll('video')];
     vids.forEach(v=>{
       v.muted = true;
+      v.volume = 0;
       const go = ()=>{ const p = v.play(); if(p && p.catch) p.catch(()=>{}); };
       go();
       v.addEventListener('canplay', go, {once:true});
