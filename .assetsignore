@@ -8,3 +8,7 @@ node_modules/
 uploads/
 design_handoff_baanbow_site/
 *.zip
+
+# หน้าเทมเพลตเอกสาร A4 — เก็บไว้ใน repo แต่ห้ามขึ้นเว็บ
+# ข้างในมีเลขผู้เสียภาษีกับเบอร์ของร้าน ไม่ควรมีหน้าลอยให้ค้นเจอที่ /baanbow-doc-a4%20(1).html
+baanbow-doc-a4 (1).html
