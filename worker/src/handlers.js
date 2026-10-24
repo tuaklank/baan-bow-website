@@ -1110,7 +1110,7 @@ export async function handleText(env, uid, text, ctx = null) {
     return 'ทิ้งรายการที่รออยู่แล้วครับ';
   }
   if (/^(help|ช่วย|คำสั่ง|เมนู)$/i.test(msg)) return HELP;
-  if (/^(แก้|แก้ไข)\??$/.test(msg)) return EDIT_HELP;
+  if (/^(แก้ไข|แก้|เปลี่ยน|ปรับ)\??$/.test(msg)) return EDIT_HELP;
 
   // คำตอบเรื่อง VAT — อ่านจากข้อความตรงๆ ไม่ต้องเสียเวลาเรียก AI
   // ใช้ได้ทั้งตอนที่ระบบถามอยู่ และตอนขอเปลี่ยน VAT ของร่างที่ประกอบไว้แล้ว
