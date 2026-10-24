@@ -17,6 +17,12 @@ compatibility_flags = ["nodejs_compat"]
 [triggers]
 crons = ["0 1 * * *", "0 10 * * *"]
 
+# เก็บ log ไว้ 3 วัน ไม่งั้นต้องนั่งเปิด wrangler tail ดักสดตอนเจ้าของร้านพิมพ์พอดี
+# ซึ่งเป็นไปไม่ได้ในทางปฏิบัติ — ปัญหาที่อยากดูส่วนใหญ่เกิดตอนไม่มีใครดูอยู่
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [vars]
 CLAUDE_MODEL = "claude-sonnet-5-5"
 BASE_URL = "https://www.baanbow.online"
