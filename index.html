@@ -102,7 +102,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-1-360.mp4" preload="auto" autoplay muted loop playsinline draggable="false"></video>
+            <video src="assets/bow-1-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -120,7 +120,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-2-360.mp4" preload="auto" autoplay muted loop playsinline draggable="false"></video>
+            <video src="assets/bow-2-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -138,7 +138,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-3-360.mp4" preload="auto" autoplay muted loop playsinline draggable="false"></video>
+            <video src="assets/bow-3-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -156,7 +156,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-4-360.mp4" preload="auto" autoplay muted loop playsinline draggable="false"></video>
+            <video src="assets/bow-4-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -393,13 +393,10 @@
   // visitor finally switches to the tab. Muted-only, so no sound can start.
   document.addEventListener('visibilitychange', ()=>{
     if(document.hidden) return;
-    document.querySelectorAll('video').forEach(v=>{
-      if(!v.paused) return;
-      // The hero is the only video allowed any sound, so leave its state alone.
-      if(!v.classList.contains('hero-video')) v.muted = true;
-      const p = v.play();
-      if(p && p.catch) p.catch(()=>{});
-    });
+    const hero = document.querySelector('.hero-video');
+    if(!hero || !hero.paused) return;
+    const p = hero.play();
+    if(p && p.catch) p.catch(()=>{});
   });
 
   // Hero sound. It starts muted so autoplay is allowed, but whenever anything
@@ -442,16 +439,31 @@
     const cards = [...track.children];
     if(!cards.length) return;
 
-    // Card videos are always muted and independent of anything else on the
-    // page. Browsers still block autoplay unless muted is set from script, and
-    // the first play() can land before the data does -- hence the canplay retry.
+    // Card videos hold on their first frame and only turn while the visitor
+    // asks for it -- hover with a mouse, press and hold on a touch screen.
+    // They stay silent either way, independent of the hero's sound.
     const vids = [...track.querySelectorAll('video')];
     vids.forEach(v=>{
       v.muted = true;
       v.volume = 0;
-      const go = ()=>{ const p = v.play(); if(p && p.catch) p.catch(()=>{}); };
-      go();
-      v.addEventListener('canplay', go, {once:true});
+      v.pause();
+
+      // With no poster an never-played video can paint nothing, so nudge it
+      // into decoding one frame to show while it waits.
+      const seed = ()=>{ try{ if(v.currentTime === 0) v.currentTime = .01; }catch(e){} };
+      if(v.readyState >= 1) seed(); else v.addEventListener('loadedmetadata', seed, {once:true});
+
+      const go   = ()=>{ const p = v.play(); if(p && p.catch) p.catch(()=>{}); };
+      const stop = ()=>{ v.pause(); };
+
+      // A touch tap also fires pointerenter, so the hover path is keyed off
+      // the pointer type rather than the event alone.
+      v.addEventListener('pointerenter', e=>{ if(e.pointerType === 'mouse') go(); });
+      v.addEventListener('pointerleave', e=>{ if(e.pointerType === 'mouse') stop(); });
+      v.addEventListener('pointerdown',  e=>{ if(e.pointerType !== 'mouse') go(); });
+      ['pointerup','pointercancel','pointerleave'].forEach(t=>{
+        v.addEventListener(t, e=>{ if(e.pointerType !== 'mouse') stop(); });
+      });
     });
 
     let idx = 0;
