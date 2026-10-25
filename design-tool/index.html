@@ -11,23 +11,35 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Trirong:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
 <style>
 *{box-sizing:border-box}
 body{margin:0}
-a{color:#b1852f;text-decoration:none}
-a:hover{color:#8a6420}
+a{color:var(--craft-gold);text-decoration:none}
+a:hover{color:var(--craft-gold-dark)}
 button{font-family:inherit}
+header a,footer a{color:inherit}
 input{font-family:inherit}
-::selection{background:#e7d5ad}
+::selection{background:var(--craft-selection)}
 input[type=color]{-webkit-appearance:none;appearance:none;border:none;padding:0;background:none}
 input[type=color]::-webkit-color-swatch-wrapper{padding:0}
 input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
 </style>
 </helmet>
-<div ref="{{setRoot}}" style="{{rootStyle}}">
+<div ref="{{setRoot}}" class="theme-craft" style="{{rootStyle}}">
+  <header class="header-solid">
+    <div class="nav-inner">
+      <a class="brand" href="../index.html">
+        <img src="assets/baanbow-logo.png" alt="BAAN BOW" width="44" height="44" />
+        <span class="brand-text">BAAN BOW</span>
+      </a>
+      <div class="nav-cta">
+        <a class="btn btn-primary btn-sm" href="../index.html">&larr; กลับหน้าแรก</a>
+      </div>
+    </div>
+  </header>
   <div style="{{headerStyle}}">
-    <img src="assets/baanbow-logo.png" alt="BAAN BOW" style="height:78px;width:78px;object-fit:contain;flex:0 0 auto;transform:translateX(-133%);margin-right:-95px" />
-    <div style="font-family:'Trirong',serif;font-weight:700;font-size:25px;letter-spacing:.3px;color:#2a241d">DESIGN <span style="color:#c62828">โบว์</span>ในแบบของคุณ</div>
+    <div style="font-family:'Trirong',serif;font-weight:700;font-size:25px;letter-spacing:.3px;color:var(--craft-ink)">DESIGN <span style="color:var(--craft-accent)">โบว์</span>ในแบบของคุณ</div>
   </div>
   <div style="{{rowStyle}}">
 
@@ -99,6 +111,15 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
 
   </div>
   </div>
+  <footer>
+    <div class="wrap foot-inner">
+      <div class="foot-brand">
+        <img src="assets/baanbow-logo.png" alt="BAAN BOW" width="34" height="34" />
+        <span class="foot-wordmark">BAAN BOW</span>
+      </div>
+      <div class="foot-contact">LINE @baanbow &middot; Tel. 086-362-4117</div>
+    </div>
+  </footer>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#b1852f&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#b1852f&quot;,&quot;#8f1d1d&quot;,&quot;#1f3a63&quot;,&quot;#2c2c2c&quot;]},&quot;goldEdgeDefault&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showPrice&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
@@ -242,7 +263,7 @@ class Component extends DCLogic {
 
   renderVals(){
     const s=this.state;
-    const accent=this.props.accent || '#b1852f';
+    const accent=this.props.accent || 'var(--craft-gold)';
     const showPrice=this.props.showPrice !== false;
     const scene=this.scene();
     const tint=this.tintColor();
@@ -250,16 +271,16 @@ class Component extends DCLogic {
 
     const isN=s.isNarrow;
     const rootStyle={ minHeight:'100vh', display:'flex', flexDirection:'column',
-      background:'#f4efe7', fontFamily:"'IBM Plex Sans Thai',system-ui,sans-serif", color:'#2a241d' };
+      background:'var(--craft-paper)', fontFamily:"'IBM Plex Sans Thai',system-ui,sans-serif", color:'var(--craft-ink)' };
     const headerStyle={ display:'flex', alignItems:'center', justifyContent:'center', gap:'14px', padding: isN?'16px 16px':'16px 28px',
-      background:'#ffffff', boxShadow:'0 1px 0 rgba(0,0,0,.08)' };
+      background:'var(--craft-surface)', boxShadow:'0 1px 0 rgba(0,0,0,.08)' };
     const rowStyle={ display:'flex', flexDirection: isN?'column':'row', flex:'1 1 auto', minHeight:0 };
     const previewPaneStyle = isN
       ? { padding:'16px 16px 4px', display:'flex', justifyContent:'center' }
       : { flex:'1 1 auto', minWidth:0, position:'sticky', top:'0', alignSelf:'flex-start', height:'calc(100vh - 86px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'32px' };
     const panelStyle = isN
       ? { width:'auto', padding:'8px 16px 44px', maxWidth:'560px', margin:'0 auto' }
-      : { width:'444px', flex:'0 0 444px', minHeight:'calc(100vh - 86px)', background:'#ffffff', boxShadow:'-1px 0 0 rgba(0,0,0,.06)', padding:'30px 28px 52px' };
+      : { width:'444px', flex:'0 0 444px', minHeight:'calc(100vh - 86px)', background:'var(--craft-surface)', boxShadow:'-1px 0 0 rgba(0,0,0,.06)', padding:'30px 28px 52px' };
     const stageStyle={ position:'relative', width:'100%', maxWidth: isN? '520px' : '860px',
       aspectRatio: scene.w+' / '+scene.h, maxHeight: isN? 'none':'86vh', margin:'0 auto',
       borderRadius:'18px', overflow:'hidden', background:'#e6e0d5',
@@ -293,10 +314,10 @@ class Component extends DCLogic {
     const customDotStyle={ ...dotBase, background: customActive? s.customColor : 'conic-gradient(from 0deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)' };
 
     const inputStyle={ width:'100%', boxSizing:'border-box', padding:'11px 13px', borderRadius:'11px', border:'none',
-      boxShadow:'inset 0 0 0 1px rgba(0,0,0,.14)', fontSize:'14px', color:'#2a241d', background:'#fff', outline:'none' };
+      boxShadow:'inset 0 0 0 1px rgba(0,0,0,.14)', fontSize:'14px', color:'var(--craft-ink)', background:'var(--craft-surface)', outline:'none' };
     const inputFocus={ boxShadow:'inset 0 0 0 2px '+accent };
-    const chipStyle={ padding:'7px 12px', borderRadius:'999px', border:'none', cursor:'pointer', background:'#f0e9dc',
-      color:'#5b4f3c', fontSize:'12.5px', fontFamily:'inherit', fontWeight:500, transition:'background .15s' };
+    const chipStyle={ padding:'7px 12px', borderRadius:'999px', border:'none', cursor:'pointer', background:'var(--craft-chip)',
+      color:'var(--craft-chip-ink)', fontSize:'12.5px', fontFamily:'inherit', fontWeight:500, transition:'background .15s' };
     const presets=this.presetList.map(p=>({ label:p.label, onClick:()=>this.applyPreset(p) }));
     const textColors=this.textSwatches.map(col=>({ onClick:()=>this.setTextColor(col),
       style:{ width:'26px', height:'26px', borderRadius:'50%', border:'none', cursor:'pointer', background:col,
@@ -306,18 +327,18 @@ class Component extends DCLogic {
       borderRadius:'12px', border:'none', cursor:'pointer', fontFamily:'inherit', transition:'box-shadow .15s, background .15s' };
     const sizesV=this.sizes.map(z=>({ label:z.label, dim:z.dim, priceText: showPrice?this.fmt(z.price):'',
       onClick:()=>this.setSize(z.id),
-      style:{ ...szBase, background: s.size===z.id?'#fbf6ec':'#f6f2ea',
+      style:{ ...szBase, background: s.size===z.id?'var(--craft-size-on)':'var(--craft-size-off)',
         boxShadow: s.size===z.id? ('0 0 0 2px '+accent):'inset 0 0 0 1px rgba(0,0,0,.08)' } }));
 
     const trackStyle={ width:'52px', height:'30px', borderRadius:'999px', border:'none', cursor:'pointer', position:'relative',
-      flex:'0 0 auto', background: s.goldEdge?accent:'#cfc6b6', transition:'background .2s' };
+      flex:'0 0 auto', background: s.goldEdge?accent:'var(--craft-track-off)', transition:'background .2s' };
     const knobStyle={ position:'absolute', top:'3px', left: s.goldEdge?'25px':'3px', width:'24px', height:'24px',
       borderRadius:'50%', background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,.3)', transition:'left .2s' };
 
     const saveBtnStyle={ flex:'1 1 auto', padding:'14px', borderRadius:'12px', border:'none', cursor:'pointer',
       background:accent, color:'#fff', fontWeight:600, fontSize:'15px', fontFamily:"'Trirong',serif", boxShadow:'0 8px 20px -9px '+accent };
     const sendBtnStyle={ flex:'1 1 auto', padding:'14px', borderRadius:'12px', border:'none', cursor:'pointer',
-      background:'#2a241d', color:'#f4efe7', fontWeight:600, fontSize:'15px', fontFamily:"'Trirong',serif" };
+      background:'var(--craft-ink)', color:'var(--craft-paper)', fontWeight:600, fontSize:'15px', fontFamily:"'Trirong',serif" };
 
     const msg=[s.line1,s.line2].filter(x=>(x||'').trim()).join(' ');
     const szObj=this.sizes.find(x=>x.id===s.size)||{};
