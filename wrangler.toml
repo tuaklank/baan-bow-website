@@ -1,0 +1,17 @@
+# เว็บ baanbow.online — Worker ที่เสิร์ฟไฟล์ static ล้วน ไม่มีสคริปต์ของตัวเอง
+# (คนละตัวกับ worker/wrangler.toml ซึ่งเป็น baanbow-office ระบบเอกสารทางไลน์)
+#
+# ไฟล์นี้ต้องอยู่ใน git ไม่ใช่ตั้งค่าไว้แค่ในหน้า dashboard — ตอน Workers Builds
+# รันจาก repo มันหา config ที่ root ไม่เจอ แล้วตกด้วย
+#   "Missing entry-point to Worker script or to assets directory"
+# ทุก commit ลองเองได้ด้วย: npx wrangler deploy --dry-run
+name = "baan-bow-website"
+compatibility_date = "2026-10-19"
+
+[observability]
+enabled = true
+
+# ทั้งโฟลเดอร์คือตัวเว็บ ส่วนที่ห้ามขึ้นเน็ตกันไว้ใน .assetsignore ข้างบนแล้ว
+# (worker/, uploads/, .claude/, หน้าเทมเพลต A4 ฯลฯ)
+[assets]
+directory = "."
