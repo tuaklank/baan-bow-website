@@ -327,7 +327,10 @@
     overflow-x:auto;overflow-y:hidden;
     scroll-snap-type:x mandatory;scroll-behavior:smooth;
     padding:6px 2px 30px;
-    cursor:grab;touch-action:pan-y;user-select:none;
+    /* pan-x as well as pan-y: a finger swipe is handled by the browser's own
+       scrolling and snapping, so only a mouse drag goes through script. */
+    cursor:grab;touch-action:pan-x pan-y;user-select:none;
+    overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
     scrollbar-width:none;
   }
   .slider-track::-webkit-scrollbar{display:none;}
@@ -347,6 +350,29 @@
   .p-media img,.p-media video{
     display:block;width:100%;aspect-ratio:3/2;object-fit:cover;
   }
+  /* "see more bows" button, sitting on the media box of every card */
+  .p-more{
+    position:absolute;left:16px;bottom:16px;
+    display:flex;align-items:center;gap:16px;
+    height:88px;padding:0 36px;border-radius:var(--r-pill);
+    border:2px solid rgba(255,255,255,.5);
+    background:rgba(var(--scrim-rgb),.55);
+    color:#fff;font-family:var(--font-body);font-size:28px;font-weight:600;white-space:nowrap;
+    cursor:pointer;transition:background .2s ease,border-color .2s ease;
+  }
+  .p-more:hover{background:var(--brand);border-color:var(--brand);}
+  .p-more-grid{
+    display:grid;grid-template-columns:repeat(2,10px);grid-auto-rows:10px;gap:4px;
+  }
+  .p-more-grid i{display:block;width:10px;height:10px;border-radius:2px;background:#fff;}
+  /* At the full size the button is nearly as wide as a phone-width card and
+     wraps over the bow, so it steps down with the arrows. */
+  @media (max-width:700px){
+    .p-more{height:52px;padding:0 20px;gap:10px;font-size:16px;}
+    .p-more-grid{grid-template-columns:repeat(2,7px);grid-auto-rows:7px;gap:3px;}
+    .p-more-grid i{width:7px;height:7px;}
+  }
+
   .p-body{
     display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
     gap:18px;padding:22px 4px 0;
@@ -410,6 +436,74 @@
   @media (max-width:700px){
     .slider-arrow{display:none;}
   }
+
+  /* ---------- BOW GALLERY (lightbox) ----------
+     Opened from the "see more bows" button on a card. The image strip is a
+     scroll-snap scroller like the card slider, so arrows, thumbnails and a
+     finger swipe all move the same thing and the counter follows the scroll. */
+  .bow-lb{
+    position:fixed;inset:0;z-index:100;
+    background:rgba(13,20,38,.92);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  }
+  .bow-lb-head{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+    width:min(1100px,100%);padding:0 20px;
+  }
+  .bow-lb-tag{font-size:11.5px;letter-spacing:2.2px;color:var(--accent-light);}
+  .bow-lb-name{
+    font-family:var(--font-display);font-weight:700;
+    font-size:clamp(18px,2.2vw,24px);color:#fff;margin:0;
+  }
+  .bow-lb-tools{display:flex;align-items:center;gap:14px;}
+  .bow-lb-count{font-size:14px;color:rgba(255,255,255,.75);}
+  .bow-lb-close{
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid rgba(255,255,255,.4);background:none;
+    color:#fff;font-size:22px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .2s ease;
+  }
+  .bow-lb-close:hover{background:var(--brand);}
+
+  .bow-lb-stage{position:relative;width:min(1100px,100%);}
+  .bow-lb-strip{
+    display:flex;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;scroll-behavior:smooth;
+    touch-action:pan-x pan-y;overscroll-behavior-x:contain;
+    scrollbar-width:none;
+  }
+  .bow-lb-strip::-webkit-scrollbar{display:none;}
+  .bow-lb-slide{flex:none;width:100%;padding:0 20px;scroll-snap-align:center;}
+  .bow-lb-slide img{
+    display:block;width:100%;max-height:72vh;object-fit:contain;
+    border-radius:16px;background:var(--ink);
+  }
+  .bow-lb-arrow{
+    position:absolute;top:50%;transform:translateY(-50%);
+    width:48px;height:48px;border-radius:50%;
+    border:none;background:rgba(255,255,255,.92);color:var(--brand-deep);
+    font-size:21px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .2s ease,color .2s ease;
+  }
+  .bow-lb-arrow:hover{background:var(--brand);color:#fff;}
+  .bow-lb-prev{left:28px;}
+  .bow-lb-next{right:28px;}
+
+  .bow-lb-thumbs{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;}
+  .bow-lb-thumbs button{
+    width:64px;height:44px;padding:0;border:none;border-radius:8px;
+    overflow:hidden;cursor:pointer;background:none;opacity:.55;
+    transition:opacity .2s ease;
+  }
+  .bow-lb-thumbs button img{display:block;width:100%;height:100%;object-fit:cover;}
+  .bow-lb-thumbs button[aria-current="true"]{
+    opacity:1;outline:2px solid var(--accent-light);outline-offset:2px;
+  }
+  /* A single-image bow hides its arrows and thumbnails; the display rules
+     above would otherwise win over the hidden attribute's own default. */
+  .bow-lb [hidden]{display:none;}
 
   /* ---------- PROCESS ----------
      Kept from the pre-2026 site, repainted: white cards on the page tint with

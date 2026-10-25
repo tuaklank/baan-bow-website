@@ -105,6 +105,10 @@
         <article class="p-card">
           <div class="p-media">
             <video src="assets/bow-1-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -123,6 +127,10 @@
         <article class="p-card">
           <div class="p-media">
             <video src="assets/bow-2-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -141,6 +149,10 @@
         <article class="p-card">
           <div class="p-media">
             <video src="assets/bow-3-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -159,6 +171,10 @@
         <article class="p-card">
           <div class="p-media">
             <video src="assets/bow-4-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -177,6 +193,10 @@
         <article class="p-card">
           <div class="p-media">
             <img src="assets/booth-6.jpg" alt="โบว์ 1 ชิ้น 4 หาง" loading="lazy" draggable="false">
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -195,6 +215,10 @@
         <article class="p-card">
           <div class="p-media">
             <img src="assets/booth-7.jpg" alt="โบว์สีครีม ขอบดำ" loading="lazy" draggable="false">
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
@@ -502,8 +526,11 @@
       });
     }, {passive:true});
 
-    // pointer drag; links and buttons keep their own click behaviour
+    // Mouse drag only; links and buttons keep their own click behaviour.
+    // A finger is left to the browser, which scrolls and snaps the track
+    // natively -- script dragging would fight it and swallow the swipe.
     track.addEventListener('pointerdown', ev=>{
+      if(ev.pointerType !== 'mouse') return;
       if(ev.target.closest('a') || ev.target.closest('button')) return;
       const x0 = ev.clientX, s0 = track.scrollLeft;
       track.classList.add('is-dragging');
@@ -522,6 +549,129 @@
 
     window.addEventListener('resize', ()=>{ track.scrollLeft = idx*step(); }, {passive:true});
     paint();
+  })();
+
+  // Bow gallery lightbox, opened from the button on each product card.
+  // One image array per product, in card order -- to show more photos of a
+  // bow, add filenames to its array here and nothing else has to change.
+  (function(){
+    const GALLERIES = [
+      ['booth-1.jpg'],   // แบบที่ 1 - โบว์ 2 ชั้น 4 หาง
+      ['booth-2.jpg'],   // แบบที่ 2 - โบว์ 2 ชั้น 4 หาง สกรีนชื่อโชว์รูม
+      ['booth-3.jpg'],   // แบบที่ 3 - โบว์ทรงดอกไม้
+      ['booth-4.jpg'],   // แบบที่ 4 - โบว์ 1 กลม 1 ชั้น
+      ['booth-6.jpg'],   // แบบที่ 9 - โบว์ 1 ชิ้น 4 หาง
+      ['booth-7.jpg'],   // สั่งทำสี - โบว์สีครีม ขอบดำ
+    ];
+    const cards = [...document.querySelectorAll('#productTrack .p-card')];
+    if(!cards.length) return;
+
+    cards.forEach((card, i)=>{
+      const btn = card.querySelector('.p-more');
+      const shots = GALLERIES[i];
+      if(!btn || !shots || !shots.length) return;
+      btn.addEventListener('click', ()=>open(
+        card.querySelector('.p-tag')?.textContent.trim() || '',
+        card.querySelector('.p-name')?.textContent.trim() || '',
+        shots
+      ));
+    });
+
+    function open(tag, name, shots){
+      const box = document.createElement('div');
+      box.className = 'bow-lb';
+      box.innerHTML =
+        '<div class="bow-lb-head">'+
+          '<div><div class="bow-lb-tag"></div><h3 class="bow-lb-name"></h3></div>'+
+          '<div class="bow-lb-tools">'+
+            '<span class="bow-lb-count"></span>'+
+            '<button class="bow-lb-close" type="button" aria-label="ปิด">&times;</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="bow-lb-stage">'+
+          '<div class="bow-lb-strip"></div>'+
+          '<button class="bow-lb-arrow bow-lb-prev" type="button" aria-label="ภาพก่อนหน้า">&lsaquo;</button>'+
+          '<button class="bow-lb-arrow bow-lb-next" type="button" aria-label="ภาพถัดไป">&rsaquo;</button>'+
+        '</div>'+
+        '<div class="bow-lb-thumbs"></div>';
+
+      box.querySelector('.bow-lb-tag').textContent  = tag;
+      box.querySelector('.bow-lb-name').textContent = name;
+
+      const strip   = box.querySelector('.bow-lb-strip');
+      const thumbsEl= box.querySelector('.bow-lb-thumbs');
+      const countEl = box.querySelector('.bow-lb-count');
+      const prev    = box.querySelector('.bow-lb-prev');
+      const next    = box.querySelector('.bow-lb-next');
+
+      shots.forEach((src, i)=>{
+        const slide = document.createElement('div');
+        slide.className = 'bow-lb-slide';
+        slide.innerHTML = '<img src="assets/'+src+'" alt="'+name+'">';
+        strip.appendChild(slide);
+
+        const t = document.createElement('button');
+        t.type = 'button';
+        t.setAttribute('aria-label','ไปที่ภาพที่ '+(i+1));
+        t.innerHTML = '<img src="assets/'+src+'" alt="">';
+        t.addEventListener('click', ()=>show(i));
+        thumbsEl.appendChild(t);
+      });
+
+      // A single image needs no thumbnail strip and no arrows.
+      const many = shots.length > 1;
+      thumbsEl.hidden = !many;
+      prev.hidden = next.hidden = !many;
+
+      const thumbs = [...thumbsEl.children];
+      let idx = 0;
+
+      function paint(){
+        countEl.textContent = (idx+1)+' / '+shots.length;
+        thumbs.forEach((t,i)=>t.setAttribute('aria-current', i===idx ? 'true' : 'false'));
+        prev.disabled = idx === 0;
+        next.disabled = idx === shots.length - 1;
+      }
+      function show(i){
+        idx = Math.max(0, Math.min(shots.length-1, i));
+        strip.scrollTo({left: idx*strip.clientWidth, behavior:'smooth'});
+        paint();
+      }
+      prev.addEventListener('click', ()=>show(idx-1));
+      next.addEventListener('click', ()=>show(idx+1));
+
+      // The scroller is the source of truth, so a finger swipe moves the
+      // counter and the thumbnails just as the arrows do.
+      let raf;
+      strip.addEventListener('scroll', ()=>{
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(()=>{
+          const i = Math.round(strip.scrollLeft / strip.clientWidth);
+          if(i !== idx && i >= 0 && i < shots.length){ idx = i; paint(); }
+        });
+      }, {passive:true});
+
+      function close(){
+        document.removeEventListener('keydown', onKey);
+        document.body.style.overflow = wasOverflow;
+        box.remove();
+      }
+      function onKey(e){
+        if(e.key === 'Escape')     close();
+        if(e.key === 'ArrowLeft')  show(idx-1);
+        if(e.key === 'ArrowRight') show(idx+1);
+      }
+      box.querySelector('.bow-lb-close').addEventListener('click', close);
+      // Only the dark backdrop itself closes -- not the image, head or thumbs.
+      box.addEventListener('click', e=>{ if(e.target === box) close(); });
+      document.addEventListener('keydown', onKey);
+
+      const wasOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.body.appendChild(box);
+      paint();
+      box.querySelector('.bow-lb-close').focus();
+    }
   })();
 
   // lead form -- UI only for now; nothing is sent anywhere yet.
