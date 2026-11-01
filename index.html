@@ -33,24 +33,27 @@
 </header>
 
 <section class="hero">
-  <video class="hero-video" data-src="assets/hero-drone.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline preload="auto"></video>
+  <video class="hero-video" data-src="assets/hero-drone.mp4" data-src-mobile="assets/hero-drone-mobile.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline preload="auto"></video>
   <script>
-    // The drone clip is 11.6 MB and a phone fetches it ahead of the bow
-    // videos further down, leaving them to wait for the line. So the element
-    // ships without a src: wide screens get one here, and a phone keeps the
-    // poster alone, which the hero also paints as its background.
+    // The full drone clip is 11.6 MB, which on a phone arrives ahead of the
+    // bow videos further down and leaves them waiting for the line. So the
+    // element ships without a src and picks one here: phones get a 1 MB
+    // encode at the size their screen can actually show, wide screens the
+    // full one. The poster covers whichever is still on its way.
     (function(){
       var v = document.currentScript.previousElementSibling;
-      var wide = matchMedia('(min-width:701px)').matches;
-      var still = matchMedia('(prefers-reduced-motion:reduce)').matches;
-      if(wide && !still){ v.src = v.dataset.src; return; }
-      v.remove();
-      // With no video there is nothing to unmute. The button is parsed after
-      // this script, so it can only be reached once the document is ready.
-      document.addEventListener('DOMContentLoaded', function(){
-        var btn = document.querySelector('[data-hero-sound]');
-        if(btn) btn.remove();
-      });
+      if(matchMedia('(prefers-reduced-motion:reduce)').matches){
+        v.remove();
+        // With no video there is nothing to unmute. The button is parsed
+        // after this script, so it can only be reached once the document
+        // is ready.
+        document.addEventListener('DOMContentLoaded', function(){
+          var btn = document.querySelector('[data-hero-sound]');
+          if(btn) btn.remove();
+        });
+        return;
+      }
+      v.src = matchMedia('(min-width:701px)').matches ? v.dataset.src : v.dataset.srcMobile;
     })();
   </script>
   <button class="hero-sound" type="button" data-hero-sound aria-pressed="false">
