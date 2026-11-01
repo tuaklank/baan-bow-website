@@ -35,6 +35,7 @@ assets/legacy/
 โบว์แบบที่1/
 โบว์แบบที่2/
 โบว์แบบที่3/
+โบว์แบบที่4/
 
 # Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
 uploads/
