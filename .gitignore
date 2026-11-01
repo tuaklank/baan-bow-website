@@ -24,6 +24,12 @@ assets/legacy/
 !assets/booth-7.jpg
 !assets/w-*.webp
 !assets/story-photo.webp
+!assets/bows/
+!assets/bows/**
+
+# ต้นฉบับภาพโบว์ที่ย่อแล้วลง assets/bows/ — เก็บไว้บนเครื่อง ไม่เข้า git
+โบว์แบบที่1/
+โบว์แบบที่2/
 
 # Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
 uploads/
