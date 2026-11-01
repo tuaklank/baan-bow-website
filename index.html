@@ -33,7 +33,26 @@
 </header>
 
 <section class="hero">
-  <video class="hero-video" src="assets/hero-drone.mp4" autoplay muted loop playsinline preload="auto"></video>
+  <video class="hero-video" data-src="assets/hero-drone.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline preload="auto"></video>
+  <script>
+    // The drone clip is 11.6 MB and a phone fetches it ahead of the bow
+    // videos further down, leaving them to wait for the line. So the element
+    // ships without a src: wide screens get one here, and a phone keeps the
+    // poster alone, which the hero also paints as its background.
+    (function(){
+      var v = document.currentScript.previousElementSibling;
+      var wide = matchMedia('(min-width:701px)').matches;
+      var still = matchMedia('(prefers-reduced-motion:reduce)').matches;
+      if(wide && !still){ v.src = v.dataset.src; return; }
+      v.remove();
+      // With no video there is nothing to unmute. The button is parsed after
+      // this script, so it can only be reached once the document is ready.
+      document.addEventListener('DOMContentLoaded', function(){
+        var btn = document.querySelector('[data-hero-sound]');
+        if(btn) btn.remove();
+      });
+    })();
+  </script>
   <button class="hero-sound" type="button" data-hero-sound aria-pressed="false">
     <span class="hero-sound-icon" aria-hidden="true">&#128263;</span>
     <span class="hero-sound-label">เปิดเสียง</span>
@@ -104,7 +123,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-1-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-1-360.mp4" poster="assets/bow-1-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
             <button class="p-more" type="button">
               <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
               ดูแบบโบว์เพิ่มเติม
@@ -126,7 +145,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-2-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-2-360.mp4" poster="assets/bow-2-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
             <button class="p-more" type="button">
               <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
               ดูแบบโบว์เพิ่มเติม
@@ -148,7 +167,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-3-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-3-360.mp4" poster="assets/bow-3-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
             <button class="p-more" type="button">
               <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
               ดูแบบโบว์เพิ่มเติม
@@ -170,7 +189,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <video src="assets/bow-4-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-4-360.mp4" poster="assets/bow-4-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
             <button class="p-more" type="button">
               <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
               ดูแบบโบว์เพิ่มเติม
@@ -465,30 +484,39 @@
     const cards = [...track.children];
     if(!cards.length) return;
 
-    // Card videos hold on their first frame and only turn while the visitor
-    // asks for it -- hover with a mouse, press and hold on a touch screen.
-    // They stay silent either way, independent of the hero's sound.
-    const vids = [...track.querySelectorAll('video')];
-    vids.forEach(v=>{
-      v.muted = true;
-      v.volume = 0;
-      v.pause();
+    // Card videos carry no src until their card is actually on screen:
+    // a phone shows one card at a time, so it downloads one clip instead of
+    // all four. The poster holds the frame until the file arrives, and the
+    // clip that is in view turns by itself -- no press and hold.
+    const vids = [...track.querySelectorAll('video[data-src]')];
+    vids.forEach(v=>{ v.muted = true; v.volume = 0; });
 
-      // With no poster an never-played video can paint nothing, so nudge it
-      // into decoding one frame to show while it waits.
-      const seed = ()=>{ try{ if(v.currentTime === 0) v.currentTime = .01; }catch(e){} };
-      if(v.readyState >= 1) seed(); else v.addEventListener('loadedmetadata', seed, {once:true});
+    function load(v){
+      if(v.dataset.loaded) return;
+      v.dataset.loaded = '1';
+      v.src = v.dataset.src;
+    }
+    function go(v){ load(v); const p = v.play(); if(p && p.catch) p.catch(()=>{}); }
+    function stop(v){ v.pause(); }
 
-      const go   = ()=>{ const p = v.play(); if(p && p.catch) p.catch(()=>{}); };
-      const stop = ()=>{ v.pause(); };
+    // Reduced motion keeps the posters still -- the video is never fetched.
+    const still = matchMedia('(prefers-reduced-motion:reduce)');
 
-      // A touch tap also fires pointerenter, so the hover path is keyed off
-      // the pointer type rather than the event alone.
-      v.addEventListener('pointerenter', e=>{ if(e.pointerType === 'mouse') go(); });
-      v.addEventListener('pointerleave', e=>{ if(e.pointerType === 'mouse') stop(); });
-      v.addEventListener('pointerdown',  e=>{ if(e.pointerType !== 'mouse') go(); });
-      ['pointerup','pointercancel','pointerleave'].forEach(t=>{
-        v.addEventListener(t, e=>{ if(e.pointerType !== 'mouse') stop(); });
+    const vio = new IntersectionObserver(entries=>{
+      entries.forEach(e=>{
+        const v = e.target;
+        if(e.isIntersecting && !still.matches) go(v); else stop(v);
+      });
+    },{threshold:0.6});
+    vids.forEach(v=>vio.observe(v));
+
+    // A card paused by a background tab or by the lightbox needs nudging back
+    // once it is on screen again.
+    document.addEventListener('visibilitychange', ()=>{
+      if(document.hidden || still.matches) return;
+      vids.forEach(v=>{
+        const r = v.getBoundingClientRect();
+        if(r.top < innerHeight && r.bottom > 0 && v.paused) go(v);
       });
     });
 

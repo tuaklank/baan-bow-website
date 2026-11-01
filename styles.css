@@ -285,6 +285,11 @@
     .hero-video{display:none;}   /* the poster stays via the section background */
     .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
   }
+  /* Phones never load the clip at all (see the hero script), so the poster
+     has to come from the section itself. */
+  @media (max-width:700px){
+    .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
+  }
   /* ---------- TRUST MARQUEE ----------
      Kept from the pre-2026 site (the design has no equivalent), repainted onto
      the new palette. */
