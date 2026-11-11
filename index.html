@@ -33,7 +33,29 @@
 </header>
 
 <section class="hero">
-  <video class="hero-video" src="assets/hero-drone.mp4" autoplay muted loop playsinline preload="auto"></video>
+  <video class="hero-video" data-src="assets/hero-drone.mp4" data-src-mobile="assets/hero-drone-mobile.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline preload="auto"></video>
+  <script>
+    // The full drone clip is 11.6 MB, which on a phone arrives ahead of the
+    // bow videos further down and leaves them waiting for the line. So the
+    // element ships without a src and picks one here: phones get a 1 MB
+    // encode at the size their screen can actually show, wide screens the
+    // full one. The poster covers whichever is still on its way.
+    (function(){
+      var v = document.currentScript.previousElementSibling;
+      if(matchMedia('(prefers-reduced-motion:reduce)').matches){
+        v.remove();
+        // With no video there is nothing to unmute. The button is parsed
+        // after this script, so it can only be reached once the document
+        // is ready.
+        document.addEventListener('DOMContentLoaded', function(){
+          var btn = document.querySelector('[data-hero-sound]');
+          if(btn) btn.remove();
+        });
+        return;
+      }
+      v.src = matchMedia('(min-width:701px)').matches ? v.dataset.src : v.dataset.srcMobile;
+    })();
+  </script>
   <button class="hero-sound" type="button" data-hero-sound aria-pressed="false">
     <span class="hero-sound-icon" aria-hidden="true">&#128263;</span>
     <span class="hero-sound-label">เปิดเสียง</span>
@@ -94,116 +116,133 @@
   <div class="wrap">
     <div class="section-head reveal">
       <div class="eyebrow">OUR BOWS</div>
-      <h2>ชมโบว์ทั้ง 6 แบบ</h2>
+      <h2>ชมโบว์ทั้ง 5 แบบ</h2>
       <p>ลากการ์ดซ้าย-ขวา หรือกดปุ่มลูกศรเพื่อเลื่อนดูโบว์แต่ละแบบ พร้อมรายละเอียดและราคาในการ์ดเดียวกัน</p>
     </div>
 
-    <!-- TODO: ยืนยันกับเจ้าของร้าน - ราคาทั้ง 6 รายการยังไม่ได้รับการยืนยัน -->
+    <!-- TODO: ยืนยันกับเจ้าของร้าน - ราคาทั้ง 5 รายการยังไม่ได้รับการยืนยัน -->
     <div class="slider">
       <div class="slider-track" id="productTrack">
 
         <article class="p-card">
+          <div class="p-head">
+            <div class="p-tag">แบบที่ 1</div>
+            <h3 class="p-name">โบว์ 2 ชั้น 4 หาง</h3>
+          </div>
           <div class="p-media">
-            <video src="assets/bow-1-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-1-360.mp4" poster="assets/bow-1-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
-              <div class="p-tag">แบบที่ 1</div>
-              <h3 class="p-name">โบว์ 2 ชั้น 4 หาง</h3>
               <p class="p-desc">ทรงคลาสสิกสำหรับส่งมอบรถ ผ้ากำมะหยี่เนื้อหนา ขอบริบบิ้นเดินเส้น หางยาวสองข้างสกรีนข้อความได้</p>
             </div>
             <div class="p-buy">
               <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">2,900</span><span class="p-unit">บาท</span></span>
+              <span class="p-addon">เพิ่มข้อความ +450฿</span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
         </article>
 
         <article class="p-card">
+          <div class="p-head">
+            <div class="p-tag">แบบที่ 2</div>
+            <h3 class="p-name">โบว์ 2 ชั้น 4 หาง สกรีนชื่อโชว์รูม</h3>
+          </div>
           <div class="p-media">
-            <video src="assets/bow-2-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-2-360.mp4" poster="assets/bow-2-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
-              <div class="p-tag">แบบที่ 2</div>
-              <h3 class="p-name">โบว์ 2 ชั้น 4 หาง สกรีนชื่อโชว์รูม</h3>
               <p class="p-desc">ทรงเดียวกับแบบที่ 1 เพิ่มงานสกรีนชื่อโชว์รูม เบอร์โทร และไลน์บนหางทั้งสองข้าง (ค่าสกรีน +450฿)</p>
             </div>
             <div class="p-buy">
               <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">2,900</span><span class="p-unit">บาท</span></span>
+              <span class="p-addon">เพิ่มข้อความ +450฿</span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
         </article>
 
         <article class="p-card">
+          <div class="p-head">
+            <div class="p-tag">แบบที่ 3</div>
+            <h3 class="p-name">โบว์ทรงดอกไม้</h3>
+          </div>
           <div class="p-media">
-            <video src="assets/bow-3-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-3-360.mp4" poster="assets/bow-3-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
-              <div class="p-tag">แบบที่ 3</div>
-              <h3 class="p-name">โบว์ทรงดอกไม้</h3>
               <p class="p-desc">ทรงกลมหลายกลีบ ดูหรูและเด่นจากทุกมุมกล้อง เหมาะกับรถคันใหญ่และงานส่งมอบที่ต้องถ่ายภาพ</p>
             </div>
             <div class="p-buy">
               <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">3,900</span><span class="p-unit">บาท</span></span>
+              <span class="p-addon">เพิ่มข้อความ +450฿</span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
         </article>
 
         <article class="p-card">
+          <div class="p-head">
+            <div class="p-tag">แบบที่ 4</div>
+            <h3 class="p-name">โบว์ 1 กลม 1 ชั้น</h3>
+          </div>
           <div class="p-media">
-            <video src="assets/bow-4-360.mp4" preload="auto" muted loop playsinline draggable="false"></video>
+            <video data-src="assets/bow-4-360.mp4" poster="assets/bow-4-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
-              <div class="p-tag">แบบที่ 4</div>
-              <h3 class="p-name">โบว์ 1 กลม 1 ชั้น</h3>
               <p class="p-desc">ทรงเรียบง่าย ติดตั้งเร็ว ผ้าหนาอยู่ทรง เหมาะกับงานส่งมอบประจำวันของโชว์รูม</p>
             </div>
             <div class="p-buy">
               <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">2,900</span><span class="p-unit">บาท</span></span>
+              <span class="p-addon">เพิ่มข้อความ +450฿</span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
         </article>
 
         <article class="p-card">
+          <div class="p-head">
+            <div class="p-tag">แบบที่ 8</div>
+            <h3 class="p-name">โบว์ 1 ชิ้น 4 หาง</h3>
+          </div>
           <div class="p-media">
-            <img src="assets/booth-6.jpg" alt="โบว์ 1 ชิ้น 4 หาง" loading="lazy" draggable="false">
+            <video data-src="assets/bow-8-360.mp4" poster="assets/bow-8-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
+            <button class="p-more" type="button">
+              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              ดูแบบโบว์เพิ่มเติม
+            </button>
           </div>
           <div class="p-body">
             <div class="p-info">
-              <div class="p-tag">แบบที่ 9</div>
-              <h3 class="p-name">โบว์ 1 ชิ้น 4 หาง</h3>
-              <p class="p-desc">โบว์ชิ้นเดียวหางสี่เส้น ราคาประหยัดที่สุดในกลุ่ม เก็บง่ายและนำกลับมาใช้ซ้ำได้</p>
+              <p class="p-desc">โบว์ชิ้นเดียวหางสี่เส้น ติดตั้งง่าย เลือกสีผ้าและสีขอบได้ สกรีนชื่อโชว์รูมบนหางได้ทั้งสองข้าง</p>
             </div>
             <div class="p-buy">
-              <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">2,500</span><span class="p-unit">บาท</span></span>
-              <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
-            </div>
-          </div>
-        </article>
-
-        <article class="p-card">
-          <div class="p-media">
-            <img src="assets/booth-7.jpg" alt="โบว์สีครีม ขอบดำ" loading="lazy" draggable="false">
-          </div>
-          <div class="p-body">
-            <div class="p-info">
-              <div class="p-tag">สั่งทำสี</div>
-              <h3 class="p-name">โบว์สีครีม ขอบดำ</h3>
-              <p class="p-desc">สั่งทำสีผ้าและสีขอบตามต้องการ ลองสีบนรถได้ที่หน้าออกแบบโบว์ก่อนสั่งจริง</p>
-            </div>
-            <div class="p-buy">
-              <span class="p-price-row"><span class="p-price">สอบถาม</span><span class="p-unit">ราคา</span></span>
+              <span class="p-addon">เพิ่มข้อความ +450฿</span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
@@ -441,30 +480,39 @@
     const cards = [...track.children];
     if(!cards.length) return;
 
-    // Card videos hold on their first frame and only turn while the visitor
-    // asks for it -- hover with a mouse, press and hold on a touch screen.
-    // They stay silent either way, independent of the hero's sound.
-    const vids = [...track.querySelectorAll('video')];
-    vids.forEach(v=>{
-      v.muted = true;
-      v.volume = 0;
-      v.pause();
+    // Card videos carry no src until their card is actually on screen:
+    // a phone shows one card at a time, so it downloads one clip instead of
+    // all four. The poster holds the frame until the file arrives, and the
+    // clip that is in view turns by itself -- no press and hold.
+    const vids = [...track.querySelectorAll('video[data-src]')];
+    vids.forEach(v=>{ v.muted = true; v.volume = 0; });
 
-      // With no poster an never-played video can paint nothing, so nudge it
-      // into decoding one frame to show while it waits.
-      const seed = ()=>{ try{ if(v.currentTime === 0) v.currentTime = .01; }catch(e){} };
-      if(v.readyState >= 1) seed(); else v.addEventListener('loadedmetadata', seed, {once:true});
+    function load(v){
+      if(v.dataset.loaded) return;
+      v.dataset.loaded = '1';
+      v.src = v.dataset.src;
+    }
+    function go(v){ load(v); const p = v.play(); if(p && p.catch) p.catch(()=>{}); }
+    function stop(v){ v.pause(); }
 
-      const go   = ()=>{ const p = v.play(); if(p && p.catch) p.catch(()=>{}); };
-      const stop = ()=>{ v.pause(); };
+    // Reduced motion keeps the posters still -- the video is never fetched.
+    const still = matchMedia('(prefers-reduced-motion:reduce)');
 
-      // A touch tap also fires pointerenter, so the hover path is keyed off
-      // the pointer type rather than the event alone.
-      v.addEventListener('pointerenter', e=>{ if(e.pointerType === 'mouse') go(); });
-      v.addEventListener('pointerleave', e=>{ if(e.pointerType === 'mouse') stop(); });
-      v.addEventListener('pointerdown',  e=>{ if(e.pointerType !== 'mouse') go(); });
-      ['pointerup','pointercancel','pointerleave'].forEach(t=>{
-        v.addEventListener(t, e=>{ if(e.pointerType !== 'mouse') stop(); });
+    const vio = new IntersectionObserver(entries=>{
+      entries.forEach(e=>{
+        const v = e.target;
+        if(e.isIntersecting && !still.matches) go(v); else stop(v);
+      });
+    },{threshold:0.6});
+    vids.forEach(v=>vio.observe(v));
+
+    // A card paused by a background tab or by the lightbox needs nudging back
+    // once it is on screen again.
+    document.addEventListener('visibilitychange', ()=>{
+      if(document.hidden || still.matches) return;
+      vids.forEach(v=>{
+        const r = v.getBoundingClientRect();
+        if(r.top < innerHeight && r.bottom > 0 && v.paused) go(v);
       });
     });
 
@@ -502,8 +550,11 @@
       });
     }, {passive:true});
 
-    // pointer drag; links and buttons keep their own click behaviour
+    // Mouse drag only; links and buttons keep their own click behaviour.
+    // A finger is left to the browser, which scrolls and snaps the track
+    // natively -- script dragging would fight it and swallow the swipe.
     track.addEventListener('pointerdown', ev=>{
+      if(ev.pointerType !== 'mouse') return;
       if(ev.target.closest('a') || ev.target.closest('button')) return;
       const x0 = ev.clientX, s0 = track.scrollLeft;
       track.classList.add('is-dragging');
@@ -522,6 +573,188 @@
 
     window.addEventListener('resize', ()=>{ track.scrollLeft = idx*step(); }, {passive:true});
     paint();
+  })();
+
+  // Bow gallery lightbox, opened from the button on each product card.
+  // One image array per product, in card order -- to show more photos of a
+  // bow, add filenames to its array here and nothing else has to change.
+  (function(){
+    const GALLERIES = [
+      // แบบที่ 1 - โบว์ 2 ชั้น 4 หาง
+      [
+        'booth-1.jpg',
+        'bows/bow-1/bow-1-01.jpg',
+        'bows/bow-1/bow-1-02.jpg',
+        'bows/bow-1/bow-1-03.jpg',
+        'bows/bow-1/bow-1-04.jpg',
+        'bows/bow-1/bow-1-05.jpg',
+        'bows/bow-1/bow-1-06.jpg',
+        'bows/bow-1/bow-1-07.jpg',
+        'bows/bow-1/bow-1-08.jpg',
+        'bows/bow-1/bow-1-09.jpg',
+        'bows/bow-1/bow-1-10.jpg',
+        'bows/bow-1/bow-1-11.jpg',
+        'bows/bow-1/bow-1-12.jpg',
+      ],
+      // แบบที่ 2 - โบว์ 2 ชั้น 4 หาง สกรีนชื่อโชว์รูม
+      [
+        'booth-2.jpg',
+        'bows/bow-2/bow-2-01.jpg',
+        'bows/bow-2/bow-2-02.jpg',
+        'bows/bow-2/bow-2-03.jpg',
+        'bows/bow-2/bow-2-04.jpg',
+        'bows/bow-2/bow-2-05.jpg',
+        'bows/bow-2/bow-2-06.jpg',
+        'bows/bow-2/bow-2-07.jpg',
+        'bows/bow-2/bow-2-08.jpg',
+        'bows/bow-2/bow-2-09.jpg',
+        'bows/bow-2/bow-2-10.jpg',
+        'bows/bow-2/bow-2-11.jpg',
+        'bows/bow-2/bow-2-12.jpg',
+        'bows/bow-2/bow-2-13.jpg',
+        'bows/bow-2/bow-2-14.jpg',
+        'bows/bow-2/bow-2-15.jpg',
+      ],
+      // แบบที่ 3 - โบว์ทรงดอกไม้
+      [
+        'booth-3.jpg',
+        'bows/bow-3/bow-3-01.jpg',
+        'bows/bow-3/bow-3-02.jpg',
+        'bows/bow-3/bow-3-03.jpg',
+        'bows/bow-3/bow-3-04.jpg',
+        'bows/bow-3/bow-3-05.jpg',
+        'bows/bow-3/bow-3-06.jpg',
+        'bows/bow-3/bow-3-07.jpg',
+        'bows/bow-3/bow-3-08.jpg',
+        'bows/bow-3/bow-3-09.jpg',
+        'bows/bow-3/bow-3-10.jpg',
+      ],
+      // แบบที่ 4 - โบว์ 1 กลม 1 ชั้น
+      [
+        'booth-4.jpg',
+        'bows/bow-4/bow-4-01.jpg',
+        'bows/bow-4/bow-4-02.jpg',
+        'bows/bow-4/bow-4-03.jpg',
+        'bows/bow-4/bow-4-04.jpg',
+      ],
+      // แบบที่ 8 - โบว์ 1 ชิ้น 4 หาง
+      [
+        'bows/bow-8/bow-8-01.jpg',
+        'bows/bow-8/bow-8-02.jpg',
+        'bows/bow-8/bow-8-03.jpg',
+        'bows/bow-8/bow-8-04.jpg',
+        'bows/bow-8/bow-8-05.jpg',
+      ],
+    ];
+    const cards = [...document.querySelectorAll('#productTrack .p-card')];
+    if(!cards.length) return;
+
+    cards.forEach((card, i)=>{
+      const btn = card.querySelector('.p-more');
+      const shots = GALLERIES[i];
+      if(!btn || !shots || !shots.length) return;
+      btn.addEventListener('click', ()=>open(
+        card.querySelector('.p-tag')?.textContent.trim() || '',
+        card.querySelector('.p-name')?.textContent.trim() || '',
+        shots
+      ));
+    });
+
+    function open(tag, name, shots){
+      const box = document.createElement('div');
+      box.className = 'bow-lb';
+      box.innerHTML =
+        '<div class="bow-lb-head">'+
+          '<div><div class="bow-lb-tag"></div><h3 class="bow-lb-name"></h3></div>'+
+          '<div class="bow-lb-tools">'+
+            '<span class="bow-lb-count"></span>'+
+            '<button class="bow-lb-close" type="button" aria-label="ปิด">&times;</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="bow-lb-stage">'+
+          '<div class="bow-lb-strip"></div>'+
+          '<button class="bow-lb-arrow bow-lb-prev" type="button" aria-label="ภาพก่อนหน้า">&lsaquo;</button>'+
+          '<button class="bow-lb-arrow bow-lb-next" type="button" aria-label="ภาพถัดไป">&rsaquo;</button>'+
+        '</div>'+
+        '<div class="bow-lb-thumbs"></div>';
+
+      box.querySelector('.bow-lb-tag').textContent  = tag;
+      box.querySelector('.bow-lb-name').textContent = name;
+
+      const strip   = box.querySelector('.bow-lb-strip');
+      const thumbsEl= box.querySelector('.bow-lb-thumbs');
+      const countEl = box.querySelector('.bow-lb-count');
+      const prev    = box.querySelector('.bow-lb-prev');
+      const next    = box.querySelector('.bow-lb-next');
+
+      shots.forEach((src, i)=>{
+        const slide = document.createElement('div');
+        slide.className = 'bow-lb-slide';
+        slide.innerHTML = '<img src="assets/'+src+'" alt="'+name+'">';
+        strip.appendChild(slide);
+
+        const t = document.createElement('button');
+        t.type = 'button';
+        t.setAttribute('aria-label','ไปที่ภาพที่ '+(i+1));
+        t.innerHTML = '<img src="assets/'+src+'" alt="">';
+        t.addEventListener('click', ()=>show(i));
+        thumbsEl.appendChild(t);
+      });
+
+      // A single image needs no thumbnail strip and no arrows.
+      const many = shots.length > 1;
+      thumbsEl.hidden = !many;
+      prev.hidden = next.hidden = !many;
+
+      const thumbs = [...thumbsEl.children];
+      let idx = 0;
+
+      function paint(){
+        countEl.textContent = (idx+1)+' / '+shots.length;
+        thumbs.forEach((t,i)=>t.setAttribute('aria-current', i===idx ? 'true' : 'false'));
+        prev.disabled = idx === 0;
+        next.disabled = idx === shots.length - 1;
+      }
+      function show(i){
+        idx = Math.max(0, Math.min(shots.length-1, i));
+        strip.scrollTo({left: idx*strip.clientWidth, behavior:'smooth'});
+        paint();
+      }
+      prev.addEventListener('click', ()=>show(idx-1));
+      next.addEventListener('click', ()=>show(idx+1));
+
+      // The scroller is the source of truth, so a finger swipe moves the
+      // counter and the thumbnails just as the arrows do.
+      let raf;
+      strip.addEventListener('scroll', ()=>{
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(()=>{
+          const i = Math.round(strip.scrollLeft / strip.clientWidth);
+          if(i !== idx && i >= 0 && i < shots.length){ idx = i; paint(); }
+        });
+      }, {passive:true});
+
+      function close(){
+        document.removeEventListener('keydown', onKey);
+        document.body.style.overflow = wasOverflow;
+        box.remove();
+      }
+      function onKey(e){
+        if(e.key === 'Escape')     close();
+        if(e.key === 'ArrowLeft')  show(idx-1);
+        if(e.key === 'ArrowRight') show(idx+1);
+      }
+      box.querySelector('.bow-lb-close').addEventListener('click', close);
+      // Only the dark backdrop itself closes -- not the image, head or thumbs.
+      box.addEventListener('click', e=>{ if(e.target === box) close(); });
+      document.addEventListener('keydown', onKey);
+
+      const wasOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.body.appendChild(box);
+      paint();
+      box.querySelector('.bow-lb-close').focus();
+    }
   })();
 
   // lead form -- UI only for now; nothing is sent anywhere yet.

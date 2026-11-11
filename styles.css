@@ -9,34 +9,36 @@
      ========================================================================== */
   :root{
     /* --- brand ------------------------------------------------------------ */
-    --brand-deep:#22407C;        /* headings, footer, dark bands */
-    --brand-deep-end:#1B3468;    /* gradient end of the dark band */
-    --brand:#1B6FD1;             /* primary action */
-    --accent-light:#8FB8EE;      /* accent on dark */
-    --muted-light:#BFD4F2;       /* secondary text on dark */
+    --brand-deep:#1A0A08;        /* footer, dark bands */
+    --brand-deep-end:#000;       /* gradient end of the dark band */
+    --brand:#E8392A;             /* primary action */
+    --accent-light:#FF9A8C;      /* accent on dark */
+    --muted-light:rgba(255,255,255,.7);  /* secondary text on dark */
 
-    /* --- surfaces --------------------------------------------------------- */
-    --page:#F4F6F9;
-    --surface:#fff;
-    --tint:#EAF1FA;              /* badge / success fill */
-    --input-bg:#F7F9FC;
-    --media-bg:#E4EAF2;          /* placeholder behind img/video */
+    /* --- surfaces ---------------------------------------------------------
+       The page is a near-black base lit by the red glow painted in body::before;
+       every "surface" is translucent white so that glow shows through. */
+    --page:#0A0405;
+    --surface:rgba(255,255,255,.07);
+    --tint:rgba(240,74,48,.18);  /* badge / success fill */
+    --input-bg:rgba(0,0,0,.35);
+    --media-bg:#1A0A08;          /* placeholder behind img/video */
 
     /* --- lines ------------------------------------------------------------ */
-    --border:#D7DFEA;
-    --border-dashed:#B9C7DA;
-    --border-success:#B9D2F0;
-    --dot-idle:#C6D3E4;
+    --border:rgba(255,255,255,.14);
+    --border-dashed:rgba(255,255,255,.25);
+    --border-success:rgba(255,154,140,.5);
+    --dot-idle:rgba(255,255,255,.3);
 
     /* --- text ------------------------------------------------------------- */
-    --ink:#131A2E;
-    --text-2:#5A6478;
-    --text-3:#8992A5;
+    --ink:#fff;
+    --text-2:rgba(255,255,255,.72);
+    --text-3:rgba(255,255,255,.5);
 
     /* --- rgb channels, for rgba() overlays -------------------------------- */
-    --scrim-rgb:19,26,46;
-    --brand-deep-rgb:34,64,124;
-    --brand-rgb:27,111,209;
+    --scrim-rgb:10,4,5;
+    --brand-deep-rgb:26,10,8;
+    --brand-rgb:232,57,42;
 
     /* --- type ------------------------------------------------------------- */
     --font-display:'Baloo Thai 2',sans-serif;
@@ -69,11 +71,11 @@
     --r-badge:10px;
 
     /* --- shadows ---------------------------------------------------------- */
-    --sh-media:0 22px 50px rgba(34,64,124,.16);
-    --sh-form:0 18px 40px rgba(34,64,124,.1);
-    --sh-cta:0 14px 34px rgba(27,111,209,.4);
-    --sh-arrow:0 10px 26px rgba(34,64,124,.18);
-    --sh-tile:0 2px 10px rgba(27,58,110,.08);
+    --sh-media:0 30px 60px -20px rgba(0,0,0,.8);
+    --sh-form:0 26px 54px -22px rgba(0,0,0,.75);
+    --sh-cta:0 16px 40px -10px rgba(240,67,44,.6);
+    --sh-arrow:0 10px 26px rgba(0,0,0,.5);
+    --sh-tile:0 18px 40px -16px rgba(0,0,0,.9);
 
     /* --- legacy aliases ---------------------------------------------------
        The pre-2026 stylesheet is written against these names. Pointing them at
@@ -97,6 +99,9 @@
      a filled brand band instead of a scrim over video. */
   .header-solid{position:static;background:var(--brand-deep);backdrop-filter:none;}
 
+  /* The tool page keeps its warm paper, so its headings stay dark even though
+     :root headings are now white on the lit black landing page. */
+  .theme-craft h1,.theme-craft h2,.theme-craft h3{color:var(--craft-ink);}
   .theme-craft{
     --craft-ink:#2a241d;
     --craft-accent:#c62828;
@@ -113,9 +118,20 @@
   }
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
+  /* The lit backdrop: a near-black page with three red glows that stay put
+     while the content scrolls, so the whole site reads as one lamp-lit room
+     instead of a flat colour. Everything above it is translucent. */
+  body::before{
+    content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(900px 620px at 18% 8%, rgba(226,36,24,.55), transparent 62%),
+      radial-gradient(760px 560px at 86% 28%, rgba(150,12,18,.45), transparent 60%),
+      radial-gradient(1100px 700px at 50% 108%, rgba(235,46,30,.40), transparent 65%),
+      var(--page);
+  }
   body{
     margin:0;
-    background:var(--cream);
+    background:var(--page);
     color:var(--ink);
     font-family:var(--font-body);
     font-weight:400;
@@ -127,7 +143,7 @@
     font-family:var(--font-display);
     font-weight:700;
     margin:0;
-    color:var(--brand-deep);
+    color:var(--ink);
     line-height:1.3;
   }
   .nav-label, .btn, .eyebrow, .tag, .step-num, .foot-label, .logo-word{
@@ -167,7 +183,7 @@
   .brand{display:flex;align-items:center;gap:11px;}
   .brand img{
     width:44px;height:44px;border-radius:50%;
-    object-fit:contain;background:#fff;   /* logo art is transparent; white backing keeps it round */
+    object-fit:contain;   /* logo art is transparent — it sits straight on the scrim */
   }
   .brand-text{
     font-family:var(--font-display);font-weight:700;font-size:19px;
@@ -191,7 +207,7 @@
     cursor:pointer;border:none;transition:transform .2s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
     white-space:nowrap;line-height:1;
   }
-  .btn-primary{background:var(--brand);color:#fff;box-shadow:var(--sh-cta);}
+  .btn-primary{background:linear-gradient(135deg,#F0432C,#B2170F);color:#fff;box-shadow:var(--sh-cta);}
   .btn-primary:hover{transform:translateY(-2px);box-shadow:0 18px 40px rgba(var(--brand-rgb),.5);}
   /* on dark backgrounds */
   .btn-ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);font-weight:600;padding:15px 28px;}
@@ -285,11 +301,16 @@
     .hero-video{display:none;}   /* the poster stays via the section background */
     .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
   }
+  /* Phones load a smaller clip (see the hero script), so the poster shows
+     from the section itself while that one is on its way. */
+  @media (max-width:700px){
+    .hero{background:var(--brand-deep) url('assets/hero-poster.jpg') center/cover;}
+  }
   /* ---------- TRUST MARQUEE ----------
      Kept from the pre-2026 site (the design has no equivalent), repainted onto
      the new palette. */
   .trust{
-    background:var(--brand-deep);
+    background:rgba(0,0,0,.45);backdrop-filter:blur(4px);
     color:var(--muted-light);
     padding:20px 0;
     overflow:hidden;
@@ -327,7 +348,10 @@
     overflow-x:auto;overflow-y:hidden;
     scroll-snap-type:x mandatory;scroll-behavior:smooth;
     padding:6px 2px 30px;
-    cursor:grab;touch-action:pan-y;user-select:none;
+    /* pan-x as well as pan-y: a finger swipe is handled by the browser's own
+       scrolling and snapping, so only a mouse drag goes through script. */
+    cursor:grab;touch-action:pan-x pan-y;user-select:none;
+    overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
     scrollbar-width:none;
   }
   .slider-track::-webkit-scrollbar{display:none;}
@@ -339,7 +363,16 @@
      snapping then bounces away from it and card 1 can never be shown. With
      start, every card has a reachable snap position, and on phones the card
      is ~full width so it still reads as centred. */
-  .p-card{flex:none;width:min(88vw,780px);scroll-snap-align:start;}
+  /* Each card is a pane of lit glass: the page's red glow shows through it,
+     which is what keeps the dark palette from reading as a flat black box. */
+  .p-card{
+    flex:none;width:min(88vw,780px);scroll-snap-align:start;
+    background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.02));
+    border:1px solid var(--border);border-radius:var(--r-card);
+    padding:16px 14px 20px;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08);
+    backdrop-filter:blur(6px);
+  }
   .p-media{
     position:relative;border-radius:var(--r-card);overflow:hidden;
     background:var(--media-bg);box-shadow:var(--sh-media);
@@ -347,32 +380,59 @@
   .p-media img,.p-media video{
     display:block;width:100%;aspect-ratio:3/2;object-fit:cover;
   }
+  /* "see more bows" button, sitting on the media box of every card */
+  .p-more{
+    position:absolute;left:16px;bottom:16px;
+    display:flex;align-items:center;gap:16px;
+    height:88px;padding:0 36px;border-radius:var(--r-pill);
+    border:2px solid rgba(255,255,255,.5);
+    background:rgba(var(--scrim-rgb),.55);
+    color:#fff;font-family:var(--font-body);font-size:28px;font-weight:600;white-space:nowrap;
+    cursor:pointer;transition:background .2s ease,border-color .2s ease;
+  }
+  .p-more:hover{background:var(--brand);border-color:var(--brand);}
+  .p-more-grid{
+    display:grid;grid-template-columns:repeat(2,10px);grid-auto-rows:10px;gap:4px;
+  }
+  .p-more-grid i{display:block;width:10px;height:10px;border-radius:2px;background:#fff;}
+  /* At the full size the button is nearly as wide as a phone-width card and
+     wraps over the bow, so it steps down with the arrows. */
+  @media (max-width:700px){
+    .p-more{height:52px;padding:0 20px;gap:10px;font-size:16px;}
+    .p-more-grid{grid-template-columns:repeat(2,7px);grid-auto-rows:7px;gap:3px;}
+    .p-more-grid i{width:7px;height:7px;}
+  }
+
+  /* Name sits above the clip, so a card reads title first, then picture. */
+  .p-head{padding:0 2px;margin-bottom:13px;}
   .p-body{
     display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
-    gap:18px;padding:22px 4px 0;
+    gap:18px;padding:17px 2px 0;
   }
   .p-info{min-width:0;}
   .p-tag{font-size:11.5px;letter-spacing:2.2px;color:var(--brand);margin-bottom:6px;}
   .p-name{
     font-family:var(--font-display);font-size:var(--fs-card-title);font-weight:700;
-    line-height:1.35;color:var(--brand-deep);margin:0;
+    line-height:1.35;color:var(--ink);margin:0;
   }
   .p-desc{
     font-size:var(--fs-small);line-height:1.65;color:var(--text-2);
-    margin:8px 0 0;max-width:520px;text-wrap:pretty;
+    margin:0;max-width:520px;text-wrap:pretty;
   }
   .p-buy{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
   .p-price-row{display:flex;align-items:baseline;gap:6px;}
   .p-price{
     font-family:var(--font-display);font-size:var(--fs-price);font-weight:700;
-    line-height:1.2;color:var(--brand-deep);
+    line-height:1.2;color:var(--ink);
   }
   .p-unit{font-size:13.5px;color:var(--text-3);}
+  /* Screen-printing surcharge, right under the price so the two read together. */
+  .p-addon{font-size:12.5px;line-height:1.2;color:var(--brand);font-weight:600;margin-top:-2px;}
   .p-order{
     display:inline-flex;align-items:center;gap:7px;
     font-size:var(--fs-small);font-weight:600;color:var(--brand);transition:color .2s ease;
   }
-  .p-order:hover{color:var(--brand-deep);}
+  .p-order:hover{color:var(--accent-light);}
 
   .slider-arrow{
     position:absolute;top:32%;transform:translateY(-50%);
@@ -411,23 +471,92 @@
     .slider-arrow{display:none;}
   }
 
+  /* ---------- BOW GALLERY (lightbox) ----------
+     Opened from the "see more bows" button on a card. The image strip is a
+     scroll-snap scroller like the card slider, so arrows, thumbnails and a
+     finger swipe all move the same thing and the counter follows the scroll. */
+  .bow-lb{
+    position:fixed;inset:0;z-index:100;
+    background:rgba(13,20,38,.92);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  }
+  .bow-lb-head{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+    width:min(1100px,100%);padding:0 20px;
+  }
+  .bow-lb-tag{font-size:11.5px;letter-spacing:2.2px;color:var(--accent-light);}
+  .bow-lb-name{
+    font-family:var(--font-display);font-weight:700;
+    font-size:clamp(18px,2.2vw,24px);color:#fff;margin:0;
+  }
+  .bow-lb-tools{display:flex;align-items:center;gap:14px;}
+  .bow-lb-count{font-size:14px;color:rgba(255,255,255,.75);}
+  .bow-lb-close{
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid rgba(255,255,255,.4);background:none;
+    color:#fff;font-size:22px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .2s ease;
+  }
+  .bow-lb-close:hover{background:var(--brand);}
+
+  .bow-lb-stage{position:relative;width:min(1100px,100%);}
+  .bow-lb-strip{
+    display:flex;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;scroll-behavior:smooth;
+    touch-action:pan-x pan-y;overscroll-behavior-x:contain;
+    scrollbar-width:none;
+  }
+  .bow-lb-strip::-webkit-scrollbar{display:none;}
+  .bow-lb-slide{flex:none;width:100%;padding:0 20px;scroll-snap-align:center;}
+  .bow-lb-slide img{
+    display:block;width:100%;max-height:72vh;object-fit:contain;
+    border-radius:16px;background:var(--ink);
+  }
+  .bow-lb-arrow{
+    position:absolute;top:50%;transform:translateY(-50%);
+    width:48px;height:48px;border-radius:50%;
+    border:none;background:rgba(255,255,255,.92);color:var(--brand-deep);
+    font-size:21px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .2s ease,color .2s ease;
+  }
+  .bow-lb-arrow:hover{background:var(--brand);color:#fff;}
+  .bow-lb-prev{left:28px;}
+  .bow-lb-next{right:28px;}
+
+  .bow-lb-thumbs{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;}
+  .bow-lb-thumbs button{
+    width:64px;height:44px;padding:0;border:none;border-radius:8px;
+    overflow:hidden;cursor:pointer;background:none;opacity:.55;
+    transition:opacity .2s ease;
+  }
+  .bow-lb-thumbs button img{display:block;width:100%;height:100%;object-fit:cover;}
+  .bow-lb-thumbs button[aria-current="true"]{
+    opacity:1;outline:2px solid var(--accent-light);outline-offset:2px;
+  }
+  /* A single-image bow hides its arrows and thumbnails; the display rules
+     above would otherwise win over the hidden attribute's own default. */
+  .bow-lb [hidden]{display:none;}
+
   /* ---------- PROCESS ----------
      Kept from the pre-2026 site, repainted: white cards on the page tint with
      the shared border token and the brand-blue step badge. */
   .process{padding:90px 0 40px;}
   .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--card-gap);}
   .step{
-    background:var(--surface);border-radius:var(--r-form);padding:34px 26px;
-    border:1px solid var(--border);
+    background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.02));
+    border-radius:var(--r-form);padding:34px 26px;
+    border:1px solid var(--border);box-shadow:0 24px 50px -24px rgba(0,0,0,.8);
   }
   .step-num{
-    width:40px;height:40px;border-radius:50%;background:var(--brand);color:#fff;
+    width:40px;height:40px;border-radius:50%;background:linear-gradient(140deg,#F04A30,#B01A12);color:#fff;
     display:flex;align-items:center;justify-content:center;
     font-family:var(--font-display);font-weight:700;font-size:18px;margin-bottom:18px;
   }
   .step h3{
     font-family:var(--font-display);font-size:20px;font-weight:700;
-    color:var(--brand-deep);margin-bottom:8px;
+    color:var(--ink);margin-bottom:8px;
   }
   .step p{font-size:var(--fs-small);line-height:1.65;color:var(--text-2);margin:0;}
 
@@ -447,10 +576,10 @@
   .gal-cta{
     display:flex;flex-direction:column;justify-content:flex-end;gap:10px;
     aspect-ratio:1;border-radius:var(--r-tile);padding:18px;
-    background:var(--brand-deep);color:#fff;
-    transition:background .2s ease;
+    background:linear-gradient(150deg,#C02418,#5E0E0A);color:#fff;
+    transition:background .2s ease,filter .2s ease;
   }
-  .gal-cta:hover{background:var(--brand);}
+  .gal-cta:hover{filter:brightness(1.15);}
   .gal-cta-title{font-family:var(--font-display);font-weight:700;font-size:19px;line-height:1.35;}
   .gal-cta-sub{font-size:var(--fs-label);color:var(--muted-light);}
   .gal-cta:hover .gal-cta-sub{color:#fff;}
@@ -458,7 +587,7 @@
   /* ---------- STORY ----------
      Kept from the pre-2026 site, repainted onto the deep-blue band. The -2deg
      tilt goes: the 2026 language is square to the grid. */
-  .story{padding:90px 0;background:var(--brand-deep);color:#fff;overflow:hidden;}
+  .story{padding:90px 0;background:rgba(0,0,0,.55);color:#fff;overflow:hidden;}
   .story-grid{
     display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
     gap:48px;align-items:center;
@@ -477,7 +606,7 @@
   .promo-card{
     position:relative;overflow:hidden;
     border-radius:var(--r-card);border:1px solid var(--brand-deep);
-    background:linear-gradient(120deg,var(--brand-deep),var(--brand-deep-end));
+    background:linear-gradient(120deg,#2A0A08,#7E1710 55%,#C02418);
     display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
   }
   .promo-copy{
@@ -523,7 +652,7 @@
   }
   .contact-text{display:flex;flex-direction:column;gap:2px;}
   .contact-label{font-size:var(--fs-eyebrow);color:var(--text-3);}
-  .contact-value{font-size:17px;font-weight:600;color:var(--brand-deep);}
+  .contact-value{font-size:17px;font-weight:600;color:var(--ink);}
 
   .lead-card{
     background:var(--surface);border:1px solid var(--border);border-radius:var(--r-form);
@@ -531,7 +660,7 @@
   }
   .lead-title{
     font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.4;
-    color:var(--brand-deep);margin-bottom:6px;
+    color:var(--ink);margin-bottom:6px;
   }
   .lead-sub{font-size:13.5px;color:var(--text-3);margin-bottom:24px;}
   .lead-form{display:flex;flex-direction:column;gap:var(--grid-gap);}
@@ -554,19 +683,19 @@
   }
   .lead-done-title{
     font-family:var(--font-display);font-size:20px;font-weight:600;
-    color:var(--brand-deep);margin-bottom:6px;
+    color:var(--ink);margin-bottom:6px;
   }
   .lead-done-sub{font-size:14px;color:var(--text-2);}
 
   /* ---------- FOOTER ---------- */
-  footer{background:var(--brand-deep);margin-top:70px;}
+  footer{background:rgba(0,0,0,.55);margin-top:70px;}
   .foot-inner{
     display:flex;flex-wrap:wrap;gap:18px;
     align-items:center;justify-content:space-between;
     padding-top:34px;padding-bottom:34px;
   }
   .foot-brand{display:flex;align-items:center;gap:11px;}
-  .foot-brand img{width:34px;height:34px;border-radius:50%;object-fit:contain;background:#fff;}
+  .foot-brand img{width:34px;height:34px;border-radius:50%;object-fit:contain;}
   .foot-wordmark{
     font-family:var(--font-display);font-weight:600;letter-spacing:2px;
     font-size:15px;color:#fff;

@@ -11,11 +11,18 @@ assets/legacy/
 !assets/baanbow-logo.png
 !assets/car-grey.jpg
 !assets/hero-drone.mp4
+!assets/hero-drone-mobile.mp4
 !assets/hero-poster.jpg
 !assets/bow-1-360.mp4
 !assets/bow-2-360.mp4
 !assets/bow-3-360.mp4
 !assets/bow-4-360.mp4
+!assets/bow-8-360.mp4
+!assets/bow-1-poster.jpg
+!assets/bow-2-poster.jpg
+!assets/bow-3-poster.jpg
+!assets/bow-4-poster.jpg
+!assets/bow-8-poster.jpg
 !assets/booth-1.jpg
 !assets/booth-2.jpg
 !assets/booth-3.jpg
@@ -24,6 +31,15 @@ assets/legacy/
 !assets/booth-7.jpg
 !assets/w-*.webp
 !assets/story-photo.webp
+!assets/bows/
+!assets/bows/**
+
+# ต้นฉบับภาพโบว์ที่ย่อแล้วลง assets/bows/ — เก็บไว้บนเครื่อง ไม่เข้า git
+โบว์แบบที่1/
+โบว์แบบที่2/
+โบว์แบบที่3/
+โบว์แบบที่4/
+โบว์แบบที่8/
 
 # Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
 uploads/
