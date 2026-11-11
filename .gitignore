@@ -17,10 +17,12 @@ assets/legacy/
 !assets/bow-2-360.mp4
 !assets/bow-3-360.mp4
 !assets/bow-4-360.mp4
+!assets/bow-8-360.mp4
 !assets/bow-1-poster.jpg
 !assets/bow-2-poster.jpg
 !assets/bow-3-poster.jpg
 !assets/bow-4-poster.jpg
+!assets/bow-8-poster.jpg
 !assets/booth-1.jpg
 !assets/booth-2.jpg
 !assets/booth-3.jpg
@@ -37,6 +39,7 @@ assets/legacy/
 โบว์แบบที่2/
 โบว์แบบที่3/
 โบว์แบบที่4/
+โบว์แบบที่8/
 
 # Heavy binary inputs — kept on disk, not in git history (89MB / 40MB)
 uploads/

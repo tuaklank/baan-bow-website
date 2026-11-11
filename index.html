@@ -116,11 +116,11 @@
   <div class="wrap">
     <div class="section-head reveal">
       <div class="eyebrow">OUR BOWS</div>
-      <h2>ชมโบว์ทั้ง 6 แบบ</h2>
+      <h2>ชมโบว์ทั้ง 5 แบบ</h2>
       <p>ลากการ์ดซ้าย-ขวา หรือกดปุ่มลูกศรเพื่อเลื่อนดูโบว์แต่ละแบบ พร้อมรายละเอียดและราคาในการ์ดเดียวกัน</p>
     </div>
 
-    <!-- TODO: ยืนยันกับเจ้าของร้าน - ราคาทั้ง 6 รายการยังไม่ได้รับการยืนยัน -->
+    <!-- TODO: ยืนยันกับเจ้าของร้าน - ราคาทั้ง 5 รายการยังไม่ได้รับการยืนยัน -->
     <div class="slider">
       <div class="slider-track" id="productTrack">
 
@@ -214,7 +214,7 @@
 
         <article class="p-card">
           <div class="p-media">
-            <img src="assets/booth-6.jpg" alt="โบว์ 1 ชิ้น 4 หาง" loading="lazy" draggable="false">
+            <video data-src="assets/bow-8-360.mp4" poster="assets/bow-8-poster.jpg" preload="none" muted loop playsinline draggable="false"></video>
             <button class="p-more" type="button">
               <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
               ดูแบบโบว์เพิ่มเติม
@@ -222,34 +222,12 @@
           </div>
           <div class="p-body">
             <div class="p-info">
-              <div class="p-tag">แบบที่ 9</div>
+              <div class="p-tag">แบบที่ 8</div>
               <h3 class="p-name">โบว์ 1 ชิ้น 4 หาง</h3>
-              <p class="p-desc">โบว์ชิ้นเดียวหางสี่เส้น ราคาประหยัดที่สุดในกลุ่ม เก็บง่ายและนำกลับมาใช้ซ้ำได้</p>
+              <p class="p-desc">โบว์ชิ้นเดียวหางสี่เส้น ติดตั้งง่าย เลือกสีผ้าและสีขอบได้ สกรีนชื่อโชว์รูมบนหางได้ทั้งสองข้าง</p>
             </div>
             <div class="p-buy">
-              <!-- TODO: ยืนยันกับเจ้าของร้าน -->
               <span class="p-price-row"><span class="p-price">2,500</span><span class="p-unit">บาท</span></span>
-              <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
-            </div>
-          </div>
-        </article>
-
-        <article class="p-card">
-          <div class="p-media">
-            <img src="assets/booth-7.jpg" alt="โบว์สีครีม ขอบดำ" loading="lazy" draggable="false">
-            <button class="p-more" type="button">
-              <span class="p-more-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-              ดูแบบโบว์เพิ่มเติม
-            </button>
-          </div>
-          <div class="p-body">
-            <div class="p-info">
-              <div class="p-tag">สั่งทำสี</div>
-              <h3 class="p-name">โบว์สีครีม ขอบดำ</h3>
-              <p class="p-desc">สั่งทำสีผ้าและสีขอบตามต้องการ ลองสีบนรถได้ที่หน้าออกแบบโบว์ก่อนสั่งจริง</p>
-            </div>
-            <div class="p-buy">
-              <span class="p-price-row"><span class="p-price">สอบถาม</span><span class="p-unit">ราคา</span></span>
               <a class="p-order" href="https://line.me/R/ti/p/@baanbow" target="_blank" rel="noopener">สั่งแบบนี้ <span aria-hidden="true">&rarr;</span></a>
             </div>
           </div>
@@ -644,8 +622,14 @@
         'bows/bow-4/bow-4-03.jpg',
         'bows/bow-4/bow-4-04.jpg',
       ],
-      ['booth-6.jpg'],   // แบบที่ 9 - โบว์ 1 ชิ้น 4 หาง
-      ['booth-7.jpg'],   // สั่งทำสี - โบว์สีครีม ขอบดำ
+      // แบบที่ 8 - โบว์ 1 ชิ้น 4 หาง
+      [
+        'bows/bow-8/bow-8-01.jpg',
+        'bows/bow-8/bow-8-02.jpg',
+        'bows/bow-8/bow-8-03.jpg',
+        'bows/bow-8/bow-8-04.jpg',
+        'bows/bow-8/bow-8-05.jpg',
+      ],
     ];
     const cards = [...document.querySelectorAll('#productTrack .p-card')];
     if(!cards.length) return;
