@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="./support.js"></script>
+<script src="./tint.js"></script>
+<script src="./tailtext.js"></script>
 </head>
 <body>
 <x-dc>
@@ -46,9 +48,6 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
   <div style="{{previewPaneStyle}}">
     <div ref="{{setStage}}" style="{{stageStyle}}">
       <canvas ref="{{setCanvas}}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
-      <sc-for list="{{tails}}" as="tl" hint-placeholder-count="2">
-        <div style="{{tl.style}}">{{tl.text}}</div>
-      </sc-for>
       <div style="position:absolute;left:14px;bottom:14px;right:14px;display:flex;gap:7px;flex-wrap:wrap;pointer-events:none">
         <span style="background:rgba(20,16,10,.72);color:#fff;font-size:12px;padding:5px 11px;border-radius:999px">{{capColor}}</span>
         <span style="background:rgba(20,16,10,.72);color:#fff;font-size:12px;padding:5px 11px;border-radius:999px">{{capEdge}}</span>
@@ -71,6 +70,23 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
         <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">กำหนดเอง</span>
         <input type="color" value="{{customColor}}" onInput="{{onCustom}}" style="position:absolute;inset:0;opacity:0;cursor:pointer" />
       </label>
+    </div>
+
+    <div style="{{trimSectionStyle}}">
+      <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#2a241d;margin:26px 0 12px">สีริบบิ้นขอบ</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">
+        <sc-for list="{{trimSwatches}}" as="tw" hint-placeholder-count="3">
+          <button onClick="{{tw.onClick}}" title="{{tw.name}}" style="{{tw.style}}">
+            <span style="{{tw.dotStyle}}"></span>
+            <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">{{tw.name}}</span>
+          </button>
+        </sc-for>
+        <label style="{{trimCustomLabelStyle}}">
+          <span style="{{trimCustomDotStyle}}"></span>
+          <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">กำหนดเอง</span>
+          <input type="color" value="{{trimCustom}}" onInput="{{onTrimCustom}}" style="position:absolute;inset:0;opacity:0;cursor:pointer" />
+        </label>
+      </div>
     </div>
 
     <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#2a241d;margin:26px 0 12px">ข้อความบนหางโบว์</div>
@@ -98,7 +114,7 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
     <div style="margin-top:28px;padding:18px;border-radius:16px;background:#2a241d;color:#f4efe7">
       <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#e7c987;margin-bottom:12px">สรุปแบบโบว์</div>
       <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">สีโบว์</span><span style="text-align:right">{{sumColor}}</span></div>
-      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ขอบทอง</span><span style="text-align:right">{{sumEdge}}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ริบบิ้นขอบ</span><span style="text-align:right">{{sumEdge}}</span></div>
       <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ข้อความ</span><span style="text-align:right">{{sumText}}</span></div>
     </div>
 
@@ -125,11 +141,16 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
 <script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#b1852f&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#b1852f&quot;,&quot;#8f1d1d&quot;,&quot;#1f3a63&quot;,&quot;#2c2c2c&quot;]},&quot;goldEdgeDefault&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showPrice&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
 class Component extends DCLogic {
   scenes = {
-    edge:  { img:'assets/car-grey.jpg',   mask:'assets/car-grey-mask.png',  w:1275, h:1233,
-             tails:[{x:0.325,y:0.53,rot:-58,mw:0.32},{x:0.67,y:0.535,rot:58,mw:0.32}],
+    // Each tail carries the centreline of the ribbon it is written on, as
+    // quadratic control points in fractions of the image, running in the
+    // direction the words read.
+    edge:  { img:'assets/car-grey.jpg',   mask:'assets/car-grey-mask.png',  w:1275, h:1233, trim:true,
+             tails:[{ path:[[0.2339,0.7325],[0.2996,0.5141],[0.4670,0.3593]], fit:0.78 },
+                    { path:[[0.5280,0.3643],[0.6954,0.5191],[0.7611,0.7375]], fit:0.78 }],
              logo:{img:'assets/baanbow-logo.png', x:0.508, y:0.732, h:0.372} },
     plain: { img:'assets/byd-no-edge.jpg', mask:'assets/byd-mask.png',        w:896,  h:1195,
-             tails:[{x:0.285,y:0.66,rot:13,mw:0.17},{x:0.63,y:0.66,rot:-13,mw:0.17}] },
+             tails:[{ path:[[0.1770,0.6166],[0.2810,0.6775],[0.4011,0.6683]], fit:0.80 },
+                    { path:[[0.5139,0.6683],[0.6340,0.6775],[0.7380,0.6166]], fit:0.80 }] },
   };
   fabrics = [
     {id:'natural',   name:'ครีมธรรมชาติ', hex:null},
@@ -158,7 +179,7 @@ class Component extends DCLogic {
   ];
   textSwatches = ['#ffffff','#4a3620','#241c12','#b1852f','#8f1d1d','#1f3a63'];
 
-  state = { colorId:'red', customColor:'#c62828', goldEdge:true, line1:'ยินดีด้วย', line2:'รับรถใหม่',
+  state = { colorId:'red', customColor:'#c62828', trimId:'black', trimCustom:'#d4af37', goldEdge:true, line1:'ยินดีด้วย', line2:'รับรถใหม่',
             textColor:'#4a3620', size:'L', isNarrow:false, stageW:760, phase:'idle' };
 
   componentDidMount(){
@@ -168,6 +189,9 @@ class Component extends DCLogic {
     window.addEventListener('resize', this.measure);
     this.measure();
     this.drawPreview();
+    // The tail lettering is drawn into the canvas, so it has to be repainted
+    // once Trirong has actually arrived.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(()=>this.drawPreview()).catch(()=>{});
   }
   componentDidUpdate(){ this.drawPreview(); }
   componentWillUnmount(){
@@ -186,6 +210,8 @@ class Component extends DCLogic {
 
   setColor = (id)=> this.setState({colorId:id});
   onCustom = (e)=> this.setState({colorId:'custom', customColor:e.target.value});
+  setTrim = (id)=> this.setState({trimId:id});
+  onTrimCustom = (e)=> this.setState({trimId:'custom', trimCustom:e.target.value});
   toggleEdge = ()=> this.setState(s=>({goldEdge:!s.goldEdge}));
   onLine1 = (e)=> this.setState({line1:e.target.value});
   onLine2 = (e)=> this.setState({line2:e.target.value});
@@ -196,8 +222,16 @@ class Component extends DCLogic {
 
   scene(){ return this.state.goldEdge ? this.scenes.edge : this.scenes.plain; }
   tintColor(){ const s=this.state; if (s.colorId==='custom') return s.customColor; if (s.colorId==='natural') return null; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.hex:null; }
+  // The ribbon trim stitched onto the bow. Black is how it was photographed,
+  // so it needs no recolouring.
+  trims = [
+    {id:'black',  name:'ดำ',  hex:null,      dot:'#1c1a18'},
+    {id:'gold',   name:'ทอง', hex:'#d4af37', dot:'linear-gradient(135deg,#f3dc8a,#c9992b 55%,#8f6a14)'},
+    {id:'silver', name:'เงิน', hex:'#c9cdd3', dot:'linear-gradient(135deg,#f4f6f8,#b4bac2 55%,#7f868f)'},
+  ];
+  trimColor(){ const s=this.state; if(!this.scene().trim) return null; if (s.trimId==='custom') return s.trimCustom; const t=this.trims.find(x=>x.id===s.trimId); return t?t.hex:null; }
+  trimName(){ const s=this.state; if (s.trimId==='custom') return 'กำหนดเอง'; const t=this.trims.find(x=>x.id===s.trimId); return t?t.name:'—'; }
   fabricName(){ const s=this.state; if (s.colorId==='custom') return 'กำหนดเอง'; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.name:'—'; }
-  computeFont(txt, refW, mw){ const maxF=refW*0.052; const avail=refW*mw; const est=(txt?txt.length:0)*0.58; let fs= est>0 ? Math.min(maxF, avail/est) : maxF; return Math.max(refW*0.022, fs); }
   fmt(n){ return '฿'+Number(n).toLocaleString('en-US'); }
   hasText(){ return (this.state.line1||'').trim()!=='' || (this.state.line2||'').trim()!==''; }
   costs(){ const base=(this.sizes.find(x=>x.id===this.state.size)||{}).price||0; const edge=this.state.goldEdge?300:0; const text=this.hasText()?200:0; return {base, edge, text, total:base+edge+text}; }
@@ -207,6 +241,7 @@ class Component extends DCLogic {
     let out='【BAAN BOW — สั่งทำโบว์รถ】\n';
     out+='• สีโบว์: '+this.fabricName()+(this.tintColor()?(' ('+this.tintColor()+')'):'')+'\n';
     out+='• ขอบทอง: '+(s.goldEdge?'มี':'ไม่มี')+'\n';
+    if (this.scene().trim) out+='• สีริบบิ้นขอบ: '+this.trimName()+(this.trimColor()?(' ('+this.trimColor()+')'):'')+'\n';
     out+='• ขนาด: '+sz.label+' ('+sz.dim+')\n';
     out+='• ข้อความ: '+msg+'\n';
     out+='• สีตัวอักษร: '+s.textColor+'\n';
@@ -217,38 +252,74 @@ class Component extends DCLogic {
 
   loadImg(src){ if(!this._imgCache) this._imgCache={}; if(!this._imgCache[src]) this._imgCache[src]=new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=src; }); return this._imgCache[src]; }
   setCanvas = (el)=>{ this.canvasEl = el; if (el) this.drawPreview(); };
-  drawPreview(){ const sc=this.scene(); const cv=this.canvasEl; if(!cv) return; const tint=this.tintColor(); const token=sc.img+'|'+tint; this._pendTok=token; const imgs=[this.loadImg(sc.img), this.loadImg(sc.mask)]; if(sc.logo) imgs.push(this.loadImg(sc.logo.img)); Promise.all(imgs).then(([base,mask,logoImg])=>{ if(!this.canvasEl || this._pendTok!==token) return; const c=this.canvasEl; if(c.width!==sc.w) c.width=sc.w; if(c.height!==sc.h) c.height=sc.h; const ctx=c.getContext('2d'); ctx.clearRect(0,0,sc.w,sc.h); ctx.drawImage(base,0,0,sc.w,sc.h); if(tint){ const t=document.createElement('canvas'); t.width=sc.w; t.height=sc.h; const tc=t.getContext('2d'); tc.fillStyle=tint; tc.fillRect(0,0,sc.w,sc.h); tc.globalCompositeOperation='destination-in'; tc.drawImage(mask,0,0,sc.w,sc.h); ctx.globalCompositeOperation='multiply'; ctx.drawImage(t,0,0); ctx.globalCompositeOperation='source-over'; } if(sc.logo && logoImg){ const lh=sc.logo.h*sc.h, lw=lh*(logoImg.width/logoImg.height); ctx.drawImage(logoImg, sc.logo.x*sc.w-lw/2, sc.logo.y*sc.h-lh/2, lw, lh); } }).catch(e=>console.error('drawPreview',e)); }
+  // The soft fabric matte costs a few hundred ms to derive from the photo, so
+  // it is built once per scene and reused for every colour the visitor tries.
+  matte(sc){
+    if(!this._mattes) this._mattes={};
+    let entry=this._mattes[sc.img];
+    if(!entry){
+      entry={ready:false};
+      entry.p = Promise.all([this.loadImg(sc.img), this.loadImg(sc.mask)])
+        // Deferred a tick so the plain photo below gets painted first: deriving
+        // the matte holds the main thread for a few hundred milliseconds.
+        .then(([base,mask])=> new Promise(res=>setTimeout(()=>{
+          const m=buildFabricMatte(base, mask, sc.w, sc.h); entry.ready=true; res(m);
+        },0)));
+      this._mattes[sc.img]=entry;
+    }
+    return entry;
+  }
+  sizeCanvas(sc){
+    const c=this.canvasEl;
+    if(c.width!==sc.w) c.width=sc.w;
+    if(c.height!==sc.h) c.height=sc.h;
+    return c.getContext('2d');
+  }
+  // One painter for both the preview and the saved PNG, so what the visitor
+  // sees on screen is exactly what the shop receives.
+  paintScene(ctx, sc, matte, logoImg, step){
+    dyeInto(ctx, matte, this.tintColor(), this.trimColor());
+    const lines=[this.state.line1,this.state.line2];
+    sc.tails.forEach((tl,i)=>{
+      const txt=(lines[i]||'').trim(); if(!txt) return;
+      drawTextOnPath(ctx, txt, tl.path.map(p=>[p[0]*sc.w, p[1]*sc.h]), {
+        family:'Trirong, serif', weight:600, color:this.state.textColor,
+        maxFontPx: sc.w*0.052, minFontPx: sc.w*0.022,
+        fit: tl.fit==null?0.80:tl.fit, offset:(tl.offset||0)*sc.h, step:step });
+    });
+    this.drawLogo(ctx, sc, logoImg);
+  }
+  drawLogo(ctx, sc, logoImg){
+    if(!sc.logo || !logoImg) return;
+    const lh=sc.logo.h*sc.h, lw=lh*(logoImg.width/logoImg.height);
+    ctx.drawImage(logoImg, sc.logo.x*sc.w-lw/2, sc.logo.y*sc.h-lh/2, lw, lh);
+  }
+  drawPreview(){
+    const sc=this.scene(); if(!this.canvasEl) return;
+    const tint=this.tintColor(); const token=sc.img+'|'+tint+'|'+this.trimColor(); this._pendTok=token;
+    const entry=this.matte(sc);
+    if(!entry.ready){
+      Promise.all([this.loadImg(sc.img), sc.logo?this.loadImg(sc.logo.img):null]).then(([base,logoImg])=>{
+        if(!this.canvasEl || this._pendTok!==token || entry.ready) return;
+        const ctx=this.sizeCanvas(sc);
+        ctx.drawImage(base,0,0,sc.w,sc.h);
+        this.drawLogo(ctx, sc, logoImg);
+      }).catch(()=>{});
+    }
+    Promise.all([entry.p, sc.logo?this.loadImg(sc.logo.img):null]).then(([matte,logoImg])=>{
+      if(!this.canvasEl || this._pendTok!==token) return;
+      this.paintScene(this.sizeCanvas(sc), sc, matte, logoImg, 2);
+    }).catch(e=>console.error('drawPreview',e));
+  }
   saveImage = async ()=>{
     try{
       this.setState({phase:'saving'});
       const sc=this.scene();
-      const imgs=[this.loadImg(sc.img), this.loadImg(sc.mask)]; if(sc.logo) imgs.push(this.loadImg(sc.logo.img)); const [base,mask,logoImg]=await Promise.all(imgs);
+      const [matte,logoImg]=await Promise.all([this.matte(sc).p, sc.logo?this.loadImg(sc.logo.img):null]);
       if (document.fonts && document.fonts.ready) { try{ await document.fonts.ready; }catch(e){} }
       const w=sc.w, h=sc.h;
       const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
-      const ctx=cv.getContext('2d');
-      ctx.drawImage(base,0,0,w,h);
-      const tint=this.tintColor();
-      if (tint){
-        const t=document.createElement('canvas'); t.width=w; t.height=h;
-        const tc=t.getContext('2d');
-        tc.fillStyle=tint; tc.fillRect(0,0,w,h);
-        tc.globalCompositeOperation='destination-in'; tc.drawImage(mask,0,0,w,h);
-        ctx.globalCompositeOperation='multiply'; ctx.drawImage(t,0,0); ctx.globalCompositeOperation='source-over';
-      }
-      const lines=[this.state.line1,this.state.line2];
-      sc.tails.forEach((tl,i)=>{
-        const txt=(lines[i]||'').trim(); if(!txt) return;
-        const fs=this.computeFont(txt, w, tl.mw);
-        ctx.save();
-        ctx.translate(tl.x*w, tl.y*h); ctx.rotate(tl.rot*Math.PI/180);
-        ctx.font='600 '+fs+'px Trirong, serif'; ctx.fillStyle=this.state.textColor;
-        ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.shadowColor='rgba(0,0,0,.30)'; ctx.shadowBlur=fs*0.12; ctx.shadowOffsetY=fs*0.04;
-        ctx.fillText(txt,0,0);
-        ctx.restore();
-      });
-      if(sc.logo && logoImg){ const lh=sc.logo.h*h, lw=lh*(logoImg.width/logoImg.height); ctx.drawImage(logoImg, sc.logo.x*w-lw/2, sc.logo.y*h-lh/2, lw, lh); }
+      this.paintScene(cv.getContext('2d'), sc, matte, logoImg, 1);
       const url=cv.toDataURL('image/png');
       const a=document.createElement('a'); a.href=url; a.download='baanbow-'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove();
       this.setState({phase:'saved'}); clearTimeout(this._pt); this._pt=setTimeout(()=>this.setState({phase:'idle'}),2600);
@@ -286,20 +357,6 @@ class Component extends DCLogic {
       borderRadius:'18px', overflow:'hidden', background:'#e6e0d5',
       boxShadow:'0 26px 60px -22px rgba(60,40,10,.5)' };
 
-    const tintStyle = tint ? { position:'absolute', inset:0, background:tint, mixBlendMode:'multiply',
-      WebkitMaskImage:'url("'+scene.mask+'")', maskImage:'url("'+scene.mask+'")',
-      WebkitMaskSize:'100% 100%', maskSize:'100% 100%', WebkitMaskRepeat:'no-repeat', maskRepeat:'no-repeat',
-      pointerEvents:'none' } : {};
-
-    const lines=[s.line1,s.line2];
-    const tails=scene.tails.map((t,i)=>({txt:(lines[i]||'').trim(), t}))
-      .filter(o=>o.txt)
-      .map(o=>{ const fs=this.computeFont(o.txt, s.stageW, o.t.mw);
-        return { text:o.txt, style:{ position:'absolute', left:(o.t.x*100)+'%', top:(o.t.y*100)+'%',
-          transform:'translate(-50%,-50%) rotate('+o.t.rot+'deg)', transformOrigin:'center',
-          fontFamily:"'Trirong', serif", fontWeight:600, fontSize:fs+'px', lineHeight:1, color:s.textColor,
-          whiteSpace:'nowrap', letterSpacing:'.5px', textShadow:'0 1px 3px rgba(0,0,0,.30)', pointerEvents:'none' } }; });
-
     const swBase={ display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', padding:'9px 4px',
       borderRadius:'12px', border:'none', cursor:'pointer', fontFamily:'inherit', transition:'box-shadow .15s, background .15s' };
     const dotBase={ width:'26px', height:'26px', borderRadius:'50%', boxShadow:'inset 0 0 0 1px rgba(0,0,0,.14)' };
@@ -307,6 +364,16 @@ class Component extends DCLogic {
       style:{ ...swBase, background: s.colorId===f.id?'#fbf6ec':'#f6f2ea',
         boxShadow: s.colorId===f.id? ('0 0 0 2px '+accent) : 'inset 0 0 0 1px rgba(0,0,0,.08)' },
       dotStyle:{ ...dotBase, background: f.hex || 'radial-gradient(circle at 35% 30%, #ffffff, #e6dabf)' } }));
+
+    const trimSwatches=this.trims.map(t=>({ name:t.name, onClick:()=>this.setTrim(t.id),
+      style:{ ...swBase, background: s.trimId===t.id?'#fbf6ec':'#f6f2ea',
+        boxShadow: s.trimId===t.id? ('0 0 0 2px '+accent) : 'inset 0 0 0 1px rgba(0,0,0,.08)' },
+      dotStyle:{ ...dotBase, background: t.dot } }));
+    const trimCustomActive=s.trimId==='custom';
+    const trimCustomLabelStyle={ ...swBase, position:'relative', background: trimCustomActive?'#fbf6ec':'#f6f2ea',
+      boxShadow: trimCustomActive? ('0 0 0 2px '+accent):'inset 0 0 0 1px rgba(0,0,0,.08)' };
+    const trimCustomDotStyle={ ...dotBase, background: trimCustomActive? s.trimCustom : 'conic-gradient(from 0deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)' };
+    const trimSectionStyle={ display: scene.trim?'block':'none' };
 
     const customActive=s.colorId==='custom';
     const customLabelStyle={ ...swBase, position:'relative', background: customActive?'#fbf6ec':'#f6f2ea',
@@ -347,16 +414,17 @@ class Component extends DCLogic {
     return {
       setRoot:this.setRoot, setStage:this.setStage, setCanvas:this.setCanvas,
       rootStyle, headerStyle, rowStyle, previewPaneStyle, panelStyle, stageStyle,
-      scene, hasTint:!!tint, tintStyle, tails,
-      capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: s.goldEdge?'ขอบทอง: เปิด':'ขอบทอง: ปิด',
+      scene,
+      capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: scene.trim?('ริบบิ้น: '+this.trimName()):'ไม่มีริบบิ้นขอบ',
       edgeSubtitle: s.goldEdge?'เปิด — มีแถบขอบเข้ม':'ปิด — โบว์ผ้าเรียบ',
       toggleEdge:this.toggleEdge, trackStyle, knobStyle,
+      trimSwatches, trimCustom:s.trimCustom, onTrimCustom:this.onTrimCustom, trimCustomLabelStyle, trimCustomDotStyle, trimSectionStyle,
       swatches, customColor:s.customColor, onCustom:this.onCustom, customLabelStyle, customDotStyle,
       line1:s.line1, line2:s.line2, onLine1:this.onLine1, onLine2:this.onLine2, inputStyle, inputFocus,
       presets, chipStyle, textColors, textColor:s.textColor, onTextColor:this.onTextColor,
       sizes:sizesV,
       showPrice,
-      sumColor:this.fabricName(), sumEdge: s.goldEdge?'มี':'ไม่มี',
+      sumColor:this.fabricName(), sumEdge: scene.trim?this.trimName():'ไม่มี',
       sumSize: szObj.label+' · '+szObj.dim, sumText: msg||'—', totalText:this.fmt(c.total),
       saveImage:this.saveImage, sendToShop:this.sendToShop, saveBtnStyle, sendBtnStyle,
       phaseText: phaseMap[s.phase]||'',
