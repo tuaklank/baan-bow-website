@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="./support.js"></script>
 <script src="./tint.js"></script>
+<script src="./tailtext.js"></script>
 </head>
 <body>
 <x-dc>
@@ -47,9 +48,6 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
   <div style="{{previewPaneStyle}}">
     <div ref="{{setStage}}" style="{{stageStyle}}">
       <canvas ref="{{setCanvas}}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
-      <sc-for list="{{tails}}" as="tl" hint-placeholder-count="2">
-        <div style="{{tl.style}}">{{tl.text}}</div>
-      </sc-for>
       <div style="position:absolute;left:14px;bottom:14px;right:14px;display:flex;gap:7px;flex-wrap:wrap;pointer-events:none">
         <span style="background:rgba(20,16,10,.72);color:#fff;font-size:12px;padding:5px 11px;border-radius:999px">{{capColor}}</span>
         <span style="background:rgba(20,16,10,.72);color:#fff;font-size:12px;padding:5px 11px;border-radius:999px">{{capEdge}}</span>
@@ -126,11 +124,16 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
 <script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#b1852f&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#b1852f&quot;,&quot;#8f1d1d&quot;,&quot;#1f3a63&quot;,&quot;#2c2c2c&quot;]},&quot;goldEdgeDefault&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showPrice&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
 class Component extends DCLogic {
   scenes = {
+    // Each tail carries the centreline of the ribbon it is written on, as
+    // quadratic control points in fractions of the image, running in the
+    // direction the words read.
     edge:  { img:'assets/car-grey.jpg',   mask:'assets/car-grey-mask.png',  w:1275, h:1233,
-             tails:[{x:0.325,y:0.53,rot:-58,mw:0.32},{x:0.67,y:0.535,rot:58,mw:0.32}],
+             tails:[{ path:[[0.2339,0.7325],[0.2996,0.5141],[0.4670,0.3593]], fit:0.78 },
+                    { path:[[0.5280,0.3643],[0.6954,0.5191],[0.7611,0.7375]], fit:0.78 }],
              logo:{img:'assets/baanbow-logo.png', x:0.508, y:0.732, h:0.372} },
     plain: { img:'assets/byd-no-edge.jpg', mask:'assets/byd-mask.png',        w:896,  h:1195,
-             tails:[{x:0.285,y:0.66,rot:13,mw:0.17},{x:0.63,y:0.66,rot:-13,mw:0.17}] },
+             tails:[{ path:[[0.1770,0.6166],[0.2810,0.6775],[0.4011,0.6683]], fit:0.80 },
+                    { path:[[0.5139,0.6683],[0.6340,0.6775],[0.7380,0.6166]], fit:0.80 }] },
   };
   fabrics = [
     {id:'natural',   name:'ครีมธรรมชาติ', hex:null},
@@ -169,6 +172,9 @@ class Component extends DCLogic {
     window.addEventListener('resize', this.measure);
     this.measure();
     this.drawPreview();
+    // The tail lettering is drawn into the canvas, so it has to be repainted
+    // once Trirong has actually arrived.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(()=>this.drawPreview()).catch(()=>{});
   }
   componentDidUpdate(){ this.drawPreview(); }
   componentWillUnmount(){
@@ -198,7 +204,6 @@ class Component extends DCLogic {
   scene(){ return this.state.goldEdge ? this.scenes.edge : this.scenes.plain; }
   tintColor(){ const s=this.state; if (s.colorId==='custom') return s.customColor; if (s.colorId==='natural') return null; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.hex:null; }
   fabricName(){ const s=this.state; if (s.colorId==='custom') return 'กำหนดเอง'; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.name:'—'; }
-  computeFont(txt, refW, mw){ const maxF=refW*0.052; const avail=refW*mw; const est=(txt?txt.length:0)*0.58; let fs= est>0 ? Math.min(maxF, avail/est) : maxF; return Math.max(refW*0.022, fs); }
   fmt(n){ return '฿'+Number(n).toLocaleString('en-US'); }
   hasText(){ return (this.state.line1||'').trim()!=='' || (this.state.line2||'').trim()!==''; }
   costs(){ const base=(this.sizes.find(x=>x.id===this.state.size)||{}).price||0; const edge=this.state.goldEdge?300:0; const text=this.hasText()?200:0; return {base, edge, text, total:base+edge+text}; }
@@ -241,6 +246,20 @@ class Component extends DCLogic {
     if(c.height!==sc.h) c.height=sc.h;
     return c.getContext('2d');
   }
+  // One painter for both the preview and the saved PNG, so what the visitor
+  // sees on screen is exactly what the shop receives.
+  paintScene(ctx, sc, matte, logoImg, step){
+    dyeInto(ctx, matte, this.tintColor());
+    const lines=[this.state.line1,this.state.line2];
+    sc.tails.forEach((tl,i)=>{
+      const txt=(lines[i]||'').trim(); if(!txt) return;
+      drawTextOnPath(ctx, txt, tl.path.map(p=>[p[0]*sc.w, p[1]*sc.h]), {
+        family:'Trirong, serif', weight:600, color:this.state.textColor,
+        maxFontPx: sc.w*0.052, minFontPx: sc.w*0.022,
+        fit: tl.fit==null?0.80:tl.fit, offset:(tl.offset||0)*sc.h, step:step });
+    });
+    this.drawLogo(ctx, sc, logoImg);
+  }
   drawLogo(ctx, sc, logoImg){
     if(!sc.logo || !logoImg) return;
     const lh=sc.logo.h*sc.h, lw=lh*(logoImg.width/logoImg.height);
@@ -260,9 +279,7 @@ class Component extends DCLogic {
     }
     Promise.all([entry.p, sc.logo?this.loadImg(sc.logo.img):null]).then(([matte,logoImg])=>{
       if(!this.canvasEl || this._pendTok!==token) return;
-      const ctx=this.sizeCanvas(sc);
-      dyeInto(ctx, matte, tint);
-      this.drawLogo(ctx, sc, logoImg);
+      this.paintScene(this.sizeCanvas(sc), sc, matte, logoImg, 2);
     }).catch(e=>console.error('drawPreview',e));
   }
   saveImage = async ()=>{
@@ -273,21 +290,7 @@ class Component extends DCLogic {
       if (document.fonts && document.fonts.ready) { try{ await document.fonts.ready; }catch(e){} }
       const w=sc.w, h=sc.h;
       const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
-      const ctx=cv.getContext('2d');
-      dyeInto(ctx, matte, this.tintColor());
-      const lines=[this.state.line1,this.state.line2];
-      sc.tails.forEach((tl,i)=>{
-        const txt=(lines[i]||'').trim(); if(!txt) return;
-        const fs=this.computeFont(txt, w, tl.mw);
-        ctx.save();
-        ctx.translate(tl.x*w, tl.y*h); ctx.rotate(tl.rot*Math.PI/180);
-        ctx.font='600 '+fs+'px Trirong, serif'; ctx.fillStyle=this.state.textColor;
-        ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.shadowColor='rgba(0,0,0,.30)'; ctx.shadowBlur=fs*0.12; ctx.shadowOffsetY=fs*0.04;
-        ctx.fillText(txt,0,0);
-        ctx.restore();
-      });
-      this.drawLogo(ctx, sc, logoImg);
+      this.paintScene(cv.getContext('2d'), sc, matte, logoImg, 1);
       const url=cv.toDataURL('image/png');
       const a=document.createElement('a'); a.href=url; a.download='baanbow-'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove();
       this.setState({phase:'saved'}); clearTimeout(this._pt); this._pt=setTimeout(()=>this.setState({phase:'idle'}),2600);
@@ -324,15 +327,6 @@ class Component extends DCLogic {
       aspectRatio: scene.w+' / '+scene.h, maxHeight: isN? 'none':'86vh', margin:'0 auto',
       borderRadius:'18px', overflow:'hidden', background:'#e6e0d5',
       boxShadow:'0 26px 60px -22px rgba(60,40,10,.5)' };
-
-    const lines=[s.line1,s.line2];
-    const tails=scene.tails.map((t,i)=>({txt:(lines[i]||'').trim(), t}))
-      .filter(o=>o.txt)
-      .map(o=>{ const fs=this.computeFont(o.txt, s.stageW, o.t.mw);
-        return { text:o.txt, style:{ position:'absolute', left:(o.t.x*100)+'%', top:(o.t.y*100)+'%',
-          transform:'translate(-50%,-50%) rotate('+o.t.rot+'deg)', transformOrigin:'center',
-          fontFamily:"'Trirong', serif", fontWeight:600, fontSize:fs+'px', lineHeight:1, color:s.textColor,
-          whiteSpace:'nowrap', letterSpacing:'.5px', textShadow:'0 1px 3px rgba(0,0,0,.30)', pointerEvents:'none' } }; });
 
     const swBase={ display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', padding:'9px 4px',
       borderRadius:'12px', border:'none', cursor:'pointer', fontFamily:'inherit', transition:'box-shadow .15s, background .15s' };
@@ -381,7 +375,7 @@ class Component extends DCLogic {
     return {
       setRoot:this.setRoot, setStage:this.setStage, setCanvas:this.setCanvas,
       rootStyle, headerStyle, rowStyle, previewPaneStyle, panelStyle, stageStyle,
-      scene, tails,
+      scene,
       capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: s.goldEdge?'ขอบทอง: เปิด':'ขอบทอง: ปิด',
       edgeSubtitle: s.goldEdge?'เปิด — มีแถบขอบเข้ม':'ปิด — โบว์ผ้าเรียบ',
       toggleEdge:this.toggleEdge, trackStyle, knobStyle,
