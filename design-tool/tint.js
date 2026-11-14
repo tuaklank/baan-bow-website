@@ -51,6 +51,11 @@
   var CONTRAST_SPAN = 0.10;
   var HILIGHT_SPAN = 0.45;             // how far above the reference luminance reaches pure white
 
+  var TRIM_GAP = 5;                    // half the widest line the trim detector will bridge
+  var TRIM_DARK_LO = 0.16, TRIM_DARK_HI = 0.36;  // luminance: fully trim below, never above
+  var TRIM_THICK = 4;                  // dark runs wider than 2*this+1 px are holes, not ribbon
+  var TRIM_FLOOD = 30;                 // how far a hole's rejection spreads through dark pixels
+
   function parseHex(hex) {
     var s = String(hex || '').trim().replace('#', '');
     if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
@@ -156,36 +161,130 @@
 
     if (x1 < 0) { x0 = y0 = 0; x1 = w - 1; y1 = h - 1; }
 
-    return { w: w, h: h, B: B, A: A, L: L, Lref: Lref,
-             box: [x0, y0, Math.min(w - 1, x1), Math.min(h - 1, y1)] };
+    // Grow the box so the ribbon trim that runs just outside the fabric
+    // matte (between the cloth and its pale piping) is inside it too.
+    x0 = Math.max(0, x0 - TRIM_GAP - 1); y0 = Math.max(0, y0 - TRIM_GAP - 1);
+    x1 = Math.min(w - 1, x1 + TRIM_GAP + 1); y1 = Math.min(h - 1, y1 + TRIM_GAP + 1);
+    var box = [x0, y0, x1, y1];
+
+    // The ribbon trim: the black lines stitched onto the bow. They are the
+    // pixels that are (a) nearly black and (b) hemmed in by fabric — which is
+    // what a morphological closing of the fabric matte fills in. Closing
+    // bridges gaps up to twice TRIM_GAP wide, so the thin lines are caught
+    // while the dark windscreen seen through the loops, and the shadow under
+    // the car beyond the silhouette, are left alone.
+    var closed = extreme(extreme(A, w, box, TRIM_GAP, true), w, box, TRIM_GAP, false);
+    // Brightness of the cloth beside each line, so the trim sits in the same
+    // light as the fold it crosses.
+    var near = extreme(L, w, box, TRIM_GAP, true);
+    var T = new Float32Array(N), S = new Float32Array(N);
+    var dark0 = TRIM_DARK_LO * Lref / 0.85, dark1 = TRIM_DARK_HI * Lref / 0.85;
+    var yy, xx, q;
+    for (yy = y0; yy <= y1; yy++) {
+      for (xx = x0, q = yy * w + x0; xx <= x1; xx++, q++) {
+        var c = closed[q];
+        if (c <= 0.002) continue;
+        var dk = 1 - clamp01((L[q] - dark0) / (dark1 - dark0));
+        if (dk <= 0) continue;
+        T[q] = c * dk * dk * (3 - 2 * dk);
+        S[q] = Math.max(0.45, Math.min(1.08, near[q] / Lref));
+      }
+    }
+
+    // Darkness alone also catches the slots where the windscreen shows
+    // through the loops. Those are fat where the trim is thin: erode the dark
+    // map until only cores wider than a ribbon line survive, then flood back
+    // out from each core through the dark pixels (a bounded distance, so a
+    // trim line that happens to touch a slot loses only its first stretch)
+    // and strike everything reached.
+    var core = extreme(T, w, box, TRIM_THICK, false);
+    var dist = new Int16Array(N), queue = new Int32Array(N), head = 0, tail = 0;
+    for (yy = y0; yy <= y1; yy++) {
+      for (xx = x0, q = yy * w + x0; xx <= x1; xx++, q++) {
+        if (core[q] > 0.5) { dist[q] = 1; queue[tail++] = q; }
+      }
+    }
+    var steps = [-1, 1, -w, w];
+    while (head < tail) {
+      var cur = queue[head++], d = dist[cur];
+      if (d > TRIM_FLOOD) continue;
+      for (var si = 0; si < 4; si++) {
+        var nb = cur + steps[si];
+        if (nb < 0 || nb >= N || dist[nb] || T[nb] <= 0.05) continue;
+        dist[nb] = d + 1; queue[tail++] = nb;
+      }
+    }
+    for (q = 0; q < tail; q++) T[queue[q]] = 0;
+
+    return { w: w, h: h, B: B, A: A, L: L, Lref: Lref, T: T, S: S, box: box };
   }
 
-  /* Paint the dyed image into ctx (which must be sized to the matte). */
-  function dyeInto(ctx, matte, tint) {
+  /* Separable max (dilate) or min (erode) filter over the box, square
+   * footprint of the given radius. Returns a new array; pixels outside the
+   * box are zero. */
+  function extreme(src, w, box, r, isMax) {
+    var x0 = box[0], y0 = box[1], x1 = box[2], y1 = box[3];
+    var tmp = new Float32Array(src.length), dst = new Float32Array(src.length);
+    var x, y, k, v, m, a, b;
+    for (y = y0; y <= y1; y++) {
+      for (x = x0; x <= x1; x++) {
+        a = x - r < x0 ? x0 : x - r; b = x + r > x1 ? x1 : x + r;
+        m = src[y * w + a];
+        for (k = a + 1; k <= b; k++) { v = src[y * w + k]; if (isMax ? v > m : v < m) m = v; }
+        tmp[y * w + x] = m;
+      }
+    }
+    for (y = y0; y <= y1; y++) {
+      a = y - r < y0 ? y0 : y - r; b = y + r > y1 ? y1 : y + r;
+      for (x = x0; x <= x1; x++) {
+        m = tmp[a * w + x];
+        for (k = a + 1; k <= b; k++) { v = tmp[k * w + x]; if (isMax ? v > m : v < m) m = v; }
+        dst[y * w + x] = m;
+      }
+    }
+    return dst;
+  }
+
+  /* Paint the dyed image into ctx (which must be sized to the matte).
+   * tint — fabric colour, or null to leave the cloth as photographed.
+   * trim — ribbon-trim colour, or null to leave the lines black. */
+  function dyeInto(ctx, matte, tint, trim) {
     var w = matte.w, h = matte.h, B = matte.B, A = matte.A, L = matte.L, Lref = matte.Lref;
+    var T = matte.T, S = matte.S;
     var out = ctx.createImageData(w, h);
     var o = out.data;
     o.set(B);
-    if (tint) {
-      var t = parseHex(tint), tr = t[0], tg = t[1], tb = t[2];
+    if (tint || trim) {
+      var t = tint ? parseHex(tint) : null, tr = 0, tg = 0, tb = 0;
+      if (t) { tr = t[0]; tg = t[1]; tb = t[2]; }
+      var r = trim ? parseHex(trim) : null;
       var box = matte.box;
       for (var y = box[1]; y <= box[3]; y++) {
         var row = y * w;
         for (var x = box[0]; x <= box[2]; x++) {
-          var p = row + x, a = A[p];
-          if (a <= 0.002) continue;
+          var p = row + x, a = t ? A[p] : 0, tm = r ? T[p] : 0;
+          if (a <= 0.002 && tm <= 0.002) continue;
           var i = p * 4;
-          var k = L[p] / Lref, dr, dg, db;
-          if (k <= 1) {
-            dr = tr * k; dg = tg * k; db = tb * k;
-          } else {
-            var e = Math.min(1, (k - 1) / HILIGHT_SPAN);
-            dr = tr + (1 - tr) * e; dg = tg + (1 - tg) * e; db = tb + (1 - tb) * e;
+          var cr = B[i], cg = B[i + 1], cb = B[i + 2];
+          if (a > 0.002) {
+            var k = L[p] / Lref, dr, dg, db;
+            if (k <= 1) {
+              dr = tr * k; dg = tg * k; db = tb * k;
+            } else {
+              var e = Math.min(1, (k - 1) / HILIGHT_SPAN);
+              dr = tr + (1 - tr) * e; dg = tg + (1 - tg) * e; db = tb + (1 - tb) * e;
+            }
+            cr += (dr * 255 - cr) * a;
+            cg += (dg * 255 - cg) * a;
+            cb += (db * 255 - cb) * a;
           }
-          o[i] = B[i] + (dr * 255 - B[i]) * a;
-          o[i + 1] = B[i + 1] + (dg * 255 - B[i + 1]) * a;
-          o[i + 2] = B[i + 2] + (db * 255 - B[i + 2]) * a;
-          o[i + 3] = 255;
+          if (tm > 0.002) {
+            var s = S[p] * 255;
+            cr += (r[0] * s - cr) * tm;
+            cg += (r[1] * s - cg) * tm;
+            cb += (r[2] * s - cb) * tm;
+          }
+          o[i] = cr; o[i + 1] = cg; o[i + 2] = cb; o[i + 3] = 255;
         }
       }
     }

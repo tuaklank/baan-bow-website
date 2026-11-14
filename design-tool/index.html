@@ -72,6 +72,23 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
       </label>
     </div>
 
+    <div style="{{trimSectionStyle}}">
+      <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#2a241d;margin:26px 0 12px">สีริบบิ้นขอบ</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">
+        <sc-for list="{{trimSwatches}}" as="tw" hint-placeholder-count="3">
+          <button onClick="{{tw.onClick}}" title="{{tw.name}}" style="{{tw.style}}">
+            <span style="{{tw.dotStyle}}"></span>
+            <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">{{tw.name}}</span>
+          </button>
+        </sc-for>
+        <label style="{{trimCustomLabelStyle}}">
+          <span style="{{trimCustomDotStyle}}"></span>
+          <span style="font-size:10.5px;line-height:1.15;text-align:center;color:#4a4034">กำหนดเอง</span>
+          <input type="color" value="{{trimCustom}}" onInput="{{onTrimCustom}}" style="position:absolute;inset:0;opacity:0;cursor:pointer" />
+        </label>
+      </div>
+    </div>
+
     <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#2a241d;margin:26px 0 12px">ข้อความบนหางโบว์</div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <input type="text" value="{{line1}}" onInput="{{onLine1}}" placeholder="หางซ้าย เช่น ยินดีด้วย" style="{{inputStyle}}" style-focus="{{inputFocus}}" />
@@ -97,7 +114,7 @@ input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
     <div style="margin-top:28px;padding:18px;border-radius:16px;background:#2a241d;color:#f4efe7">
       <div style="font-family:'Trirong',serif;font-size:15px;font-weight:600;color:#e7c987;margin-bottom:12px">สรุปแบบโบว์</div>
       <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">สีโบว์</span><span style="text-align:right">{{sumColor}}</span></div>
-      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ขอบทอง</span><span style="text-align:right">{{sumEdge}}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ริบบิ้นขอบ</span><span style="text-align:right">{{sumEdge}}</span></div>
       <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0"><span style="color:#b7ad9c">ข้อความ</span><span style="text-align:right">{{sumText}}</span></div>
     </div>
 
@@ -127,7 +144,7 @@ class Component extends DCLogic {
     // Each tail carries the centreline of the ribbon it is written on, as
     // quadratic control points in fractions of the image, running in the
     // direction the words read.
-    edge:  { img:'assets/car-grey.jpg',   mask:'assets/car-grey-mask.png',  w:1275, h:1233,
+    edge:  { img:'assets/car-grey.jpg',   mask:'assets/car-grey-mask.png',  w:1275, h:1233, trim:true,
              tails:[{ path:[[0.2339,0.7325],[0.2996,0.5141],[0.4670,0.3593]], fit:0.78 },
                     { path:[[0.5280,0.3643],[0.6954,0.5191],[0.7611,0.7375]], fit:0.78 }],
              logo:{img:'assets/baanbow-logo.png', x:0.508, y:0.732, h:0.372} },
@@ -162,7 +179,7 @@ class Component extends DCLogic {
   ];
   textSwatches = ['#ffffff','#4a3620','#241c12','#b1852f','#8f1d1d','#1f3a63'];
 
-  state = { colorId:'red', customColor:'#c62828', goldEdge:true, line1:'ยินดีด้วย', line2:'รับรถใหม่',
+  state = { colorId:'red', customColor:'#c62828', trimId:'black', trimCustom:'#d4af37', goldEdge:true, line1:'ยินดีด้วย', line2:'รับรถใหม่',
             textColor:'#4a3620', size:'L', isNarrow:false, stageW:760, phase:'idle' };
 
   componentDidMount(){
@@ -193,6 +210,8 @@ class Component extends DCLogic {
 
   setColor = (id)=> this.setState({colorId:id});
   onCustom = (e)=> this.setState({colorId:'custom', customColor:e.target.value});
+  setTrim = (id)=> this.setState({trimId:id});
+  onTrimCustom = (e)=> this.setState({trimId:'custom', trimCustom:e.target.value});
   toggleEdge = ()=> this.setState(s=>({goldEdge:!s.goldEdge}));
   onLine1 = (e)=> this.setState({line1:e.target.value});
   onLine2 = (e)=> this.setState({line2:e.target.value});
@@ -203,6 +222,15 @@ class Component extends DCLogic {
 
   scene(){ return this.state.goldEdge ? this.scenes.edge : this.scenes.plain; }
   tintColor(){ const s=this.state; if (s.colorId==='custom') return s.customColor; if (s.colorId==='natural') return null; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.hex:null; }
+  // The ribbon trim stitched onto the bow. Black is how it was photographed,
+  // so it needs no recolouring.
+  trims = [
+    {id:'black',  name:'ดำ',  hex:null,      dot:'#1c1a18'},
+    {id:'gold',   name:'ทอง', hex:'#d4af37', dot:'linear-gradient(135deg,#f3dc8a,#c9992b 55%,#8f6a14)'},
+    {id:'silver', name:'เงิน', hex:'#c9cdd3', dot:'linear-gradient(135deg,#f4f6f8,#b4bac2 55%,#7f868f)'},
+  ];
+  trimColor(){ const s=this.state; if(!this.scene().trim) return null; if (s.trimId==='custom') return s.trimCustom; const t=this.trims.find(x=>x.id===s.trimId); return t?t.hex:null; }
+  trimName(){ const s=this.state; if (s.trimId==='custom') return 'กำหนดเอง'; const t=this.trims.find(x=>x.id===s.trimId); return t?t.name:'—'; }
   fabricName(){ const s=this.state; if (s.colorId==='custom') return 'กำหนดเอง'; const f=this.fabrics.find(x=>x.id===s.colorId); return f?f.name:'—'; }
   fmt(n){ return '฿'+Number(n).toLocaleString('en-US'); }
   hasText(){ return (this.state.line1||'').trim()!=='' || (this.state.line2||'').trim()!==''; }
@@ -213,6 +241,7 @@ class Component extends DCLogic {
     let out='【BAAN BOW — สั่งทำโบว์รถ】\n';
     out+='• สีโบว์: '+this.fabricName()+(this.tintColor()?(' ('+this.tintColor()+')'):'')+'\n';
     out+='• ขอบทอง: '+(s.goldEdge?'มี':'ไม่มี')+'\n';
+    if (this.scene().trim) out+='• สีริบบิ้นขอบ: '+this.trimName()+(this.trimColor()?(' ('+this.trimColor()+')'):'')+'\n';
     out+='• ขนาด: '+sz.label+' ('+sz.dim+')\n';
     out+='• ข้อความ: '+msg+'\n';
     out+='• สีตัวอักษร: '+s.textColor+'\n';
@@ -249,7 +278,7 @@ class Component extends DCLogic {
   // One painter for both the preview and the saved PNG, so what the visitor
   // sees on screen is exactly what the shop receives.
   paintScene(ctx, sc, matte, logoImg, step){
-    dyeInto(ctx, matte, this.tintColor());
+    dyeInto(ctx, matte, this.tintColor(), this.trimColor());
     const lines=[this.state.line1,this.state.line2];
     sc.tails.forEach((tl,i)=>{
       const txt=(lines[i]||'').trim(); if(!txt) return;
@@ -267,7 +296,7 @@ class Component extends DCLogic {
   }
   drawPreview(){
     const sc=this.scene(); if(!this.canvasEl) return;
-    const tint=this.tintColor(); const token=sc.img+'|'+tint; this._pendTok=token;
+    const tint=this.tintColor(); const token=sc.img+'|'+tint+'|'+this.trimColor(); this._pendTok=token;
     const entry=this.matte(sc);
     if(!entry.ready){
       Promise.all([this.loadImg(sc.img), sc.logo?this.loadImg(sc.logo.img):null]).then(([base,logoImg])=>{
@@ -336,6 +365,16 @@ class Component extends DCLogic {
         boxShadow: s.colorId===f.id? ('0 0 0 2px '+accent) : 'inset 0 0 0 1px rgba(0,0,0,.08)' },
       dotStyle:{ ...dotBase, background: f.hex || 'radial-gradient(circle at 35% 30%, #ffffff, #e6dabf)' } }));
 
+    const trimSwatches=this.trims.map(t=>({ name:t.name, onClick:()=>this.setTrim(t.id),
+      style:{ ...swBase, background: s.trimId===t.id?'#fbf6ec':'#f6f2ea',
+        boxShadow: s.trimId===t.id? ('0 0 0 2px '+accent) : 'inset 0 0 0 1px rgba(0,0,0,.08)' },
+      dotStyle:{ ...dotBase, background: t.dot } }));
+    const trimCustomActive=s.trimId==='custom';
+    const trimCustomLabelStyle={ ...swBase, position:'relative', background: trimCustomActive?'#fbf6ec':'#f6f2ea',
+      boxShadow: trimCustomActive? ('0 0 0 2px '+accent):'inset 0 0 0 1px rgba(0,0,0,.08)' };
+    const trimCustomDotStyle={ ...dotBase, background: trimCustomActive? s.trimCustom : 'conic-gradient(from 0deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)' };
+    const trimSectionStyle={ display: scene.trim?'block':'none' };
+
     const customActive=s.colorId==='custom';
     const customLabelStyle={ ...swBase, position:'relative', background: customActive?'#fbf6ec':'#f6f2ea',
       boxShadow: customActive? ('0 0 0 2px '+accent):'inset 0 0 0 1px rgba(0,0,0,.08)' };
@@ -376,15 +415,16 @@ class Component extends DCLogic {
       setRoot:this.setRoot, setStage:this.setStage, setCanvas:this.setCanvas,
       rootStyle, headerStyle, rowStyle, previewPaneStyle, panelStyle, stageStyle,
       scene,
-      capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: s.goldEdge?'ขอบทอง: เปิด':'ขอบทอง: ปิด',
+      capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: scene.trim?('ริบบิ้น: '+this.trimName()):'ไม่มีริบบิ้นขอบ',
       edgeSubtitle: s.goldEdge?'เปิด — มีแถบขอบเข้ม':'ปิด — โบว์ผ้าเรียบ',
       toggleEdge:this.toggleEdge, trackStyle, knobStyle,
+      trimSwatches, trimCustom:s.trimCustom, onTrimCustom:this.onTrimCustom, trimCustomLabelStyle, trimCustomDotStyle, trimSectionStyle,
       swatches, customColor:s.customColor, onCustom:this.onCustom, customLabelStyle, customDotStyle,
       line1:s.line1, line2:s.line2, onLine1:this.onLine1, onLine2:this.onLine2, inputStyle, inputFocus,
       presets, chipStyle, textColors, textColor:s.textColor, onTextColor:this.onTextColor,
       sizes:sizesV,
       showPrice,
-      sumColor:this.fabricName(), sumEdge: s.goldEdge?'มี':'ไม่มี',
+      sumColor:this.fabricName(), sumEdge: scene.trim?this.trimName():'ไม่มี',
       sumSize: szObj.label+' · '+szObj.dim, sumText: msg||'—', totalText:this.fmt(c.total),
       saveImage:this.saveImage, sendToShop:this.sendToShop, saveBtnStyle, sendBtnStyle,
       phaseText: phaseMap[s.phase]||'',
