@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="./support.js"></script>
+<script src="./tint.js"></script>
 </head>
 <body>
 <x-dc>
@@ -217,25 +218,63 @@ class Component extends DCLogic {
 
   loadImg(src){ if(!this._imgCache) this._imgCache={}; if(!this._imgCache[src]) this._imgCache[src]=new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=src; }); return this._imgCache[src]; }
   setCanvas = (el)=>{ this.canvasEl = el; if (el) this.drawPreview(); };
-  drawPreview(){ const sc=this.scene(); const cv=this.canvasEl; if(!cv) return; const tint=this.tintColor(); const token=sc.img+'|'+tint; this._pendTok=token; const imgs=[this.loadImg(sc.img), this.loadImg(sc.mask)]; if(sc.logo) imgs.push(this.loadImg(sc.logo.img)); Promise.all(imgs).then(([base,mask,logoImg])=>{ if(!this.canvasEl || this._pendTok!==token) return; const c=this.canvasEl; if(c.width!==sc.w) c.width=sc.w; if(c.height!==sc.h) c.height=sc.h; const ctx=c.getContext('2d'); ctx.clearRect(0,0,sc.w,sc.h); ctx.drawImage(base,0,0,sc.w,sc.h); if(tint){ const t=document.createElement('canvas'); t.width=sc.w; t.height=sc.h; const tc=t.getContext('2d'); tc.fillStyle=tint; tc.fillRect(0,0,sc.w,sc.h); tc.globalCompositeOperation='destination-in'; tc.drawImage(mask,0,0,sc.w,sc.h); ctx.globalCompositeOperation='multiply'; ctx.drawImage(t,0,0); ctx.globalCompositeOperation='source-over'; } if(sc.logo && logoImg){ const lh=sc.logo.h*sc.h, lw=lh*(logoImg.width/logoImg.height); ctx.drawImage(logoImg, sc.logo.x*sc.w-lw/2, sc.logo.y*sc.h-lh/2, lw, lh); } }).catch(e=>console.error('drawPreview',e)); }
+  // The soft fabric matte costs a few hundred ms to derive from the photo, so
+  // it is built once per scene and reused for every colour the visitor tries.
+  matte(sc){
+    if(!this._mattes) this._mattes={};
+    let entry=this._mattes[sc.img];
+    if(!entry){
+      entry={ready:false};
+      entry.p = Promise.all([this.loadImg(sc.img), this.loadImg(sc.mask)])
+        // Deferred a tick so the plain photo below gets painted first: deriving
+        // the matte holds the main thread for a few hundred milliseconds.
+        .then(([base,mask])=> new Promise(res=>setTimeout(()=>{
+          const m=buildFabricMatte(base, mask, sc.w, sc.h); entry.ready=true; res(m);
+        },0)));
+      this._mattes[sc.img]=entry;
+    }
+    return entry;
+  }
+  sizeCanvas(sc){
+    const c=this.canvasEl;
+    if(c.width!==sc.w) c.width=sc.w;
+    if(c.height!==sc.h) c.height=sc.h;
+    return c.getContext('2d');
+  }
+  drawLogo(ctx, sc, logoImg){
+    if(!sc.logo || !logoImg) return;
+    const lh=sc.logo.h*sc.h, lw=lh*(logoImg.width/logoImg.height);
+    ctx.drawImage(logoImg, sc.logo.x*sc.w-lw/2, sc.logo.y*sc.h-lh/2, lw, lh);
+  }
+  drawPreview(){
+    const sc=this.scene(); if(!this.canvasEl) return;
+    const tint=this.tintColor(); const token=sc.img+'|'+tint; this._pendTok=token;
+    const entry=this.matte(sc);
+    if(!entry.ready){
+      Promise.all([this.loadImg(sc.img), sc.logo?this.loadImg(sc.logo.img):null]).then(([base,logoImg])=>{
+        if(!this.canvasEl || this._pendTok!==token || entry.ready) return;
+        const ctx=this.sizeCanvas(sc);
+        ctx.drawImage(base,0,0,sc.w,sc.h);
+        this.drawLogo(ctx, sc, logoImg);
+      }).catch(()=>{});
+    }
+    Promise.all([entry.p, sc.logo?this.loadImg(sc.logo.img):null]).then(([matte,logoImg])=>{
+      if(!this.canvasEl || this._pendTok!==token) return;
+      const ctx=this.sizeCanvas(sc);
+      dyeInto(ctx, matte, tint);
+      this.drawLogo(ctx, sc, logoImg);
+    }).catch(e=>console.error('drawPreview',e));
+  }
   saveImage = async ()=>{
     try{
       this.setState({phase:'saving'});
       const sc=this.scene();
-      const imgs=[this.loadImg(sc.img), this.loadImg(sc.mask)]; if(sc.logo) imgs.push(this.loadImg(sc.logo.img)); const [base,mask,logoImg]=await Promise.all(imgs);
+      const [matte,logoImg]=await Promise.all([this.matte(sc).p, sc.logo?this.loadImg(sc.logo.img):null]);
       if (document.fonts && document.fonts.ready) { try{ await document.fonts.ready; }catch(e){} }
       const w=sc.w, h=sc.h;
       const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
       const ctx=cv.getContext('2d');
-      ctx.drawImage(base,0,0,w,h);
-      const tint=this.tintColor();
-      if (tint){
-        const t=document.createElement('canvas'); t.width=w; t.height=h;
-        const tc=t.getContext('2d');
-        tc.fillStyle=tint; tc.fillRect(0,0,w,h);
-        tc.globalCompositeOperation='destination-in'; tc.drawImage(mask,0,0,w,h);
-        ctx.globalCompositeOperation='multiply'; ctx.drawImage(t,0,0); ctx.globalCompositeOperation='source-over';
-      }
+      dyeInto(ctx, matte, this.tintColor());
       const lines=[this.state.line1,this.state.line2];
       sc.tails.forEach((tl,i)=>{
         const txt=(lines[i]||'').trim(); if(!txt) return;
@@ -248,7 +287,7 @@ class Component extends DCLogic {
         ctx.fillText(txt,0,0);
         ctx.restore();
       });
-      if(sc.logo && logoImg){ const lh=sc.logo.h*h, lw=lh*(logoImg.width/logoImg.height); ctx.drawImage(logoImg, sc.logo.x*w-lw/2, sc.logo.y*h-lh/2, lw, lh); }
+      this.drawLogo(ctx, sc, logoImg);
       const url=cv.toDataURL('image/png');
       const a=document.createElement('a'); a.href=url; a.download='baanbow-'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove();
       this.setState({phase:'saved'}); clearTimeout(this._pt); this._pt=setTimeout(()=>this.setState({phase:'idle'}),2600);
@@ -285,11 +324,6 @@ class Component extends DCLogic {
       aspectRatio: scene.w+' / '+scene.h, maxHeight: isN? 'none':'86vh', margin:'0 auto',
       borderRadius:'18px', overflow:'hidden', background:'#e6e0d5',
       boxShadow:'0 26px 60px -22px rgba(60,40,10,.5)' };
-
-    const tintStyle = tint ? { position:'absolute', inset:0, background:tint, mixBlendMode:'multiply',
-      WebkitMaskImage:'url("'+scene.mask+'")', maskImage:'url("'+scene.mask+'")',
-      WebkitMaskSize:'100% 100%', maskSize:'100% 100%', WebkitMaskRepeat:'no-repeat', maskRepeat:'no-repeat',
-      pointerEvents:'none' } : {};
 
     const lines=[s.line1,s.line2];
     const tails=scene.tails.map((t,i)=>({txt:(lines[i]||'').trim(), t}))
@@ -347,7 +381,7 @@ class Component extends DCLogic {
     return {
       setRoot:this.setRoot, setStage:this.setStage, setCanvas:this.setCanvas,
       rootStyle, headerStyle, rowStyle, previewPaneStyle, panelStyle, stageStyle,
-      scene, hasTint:!!tint, tintStyle, tails,
+      scene, tails,
       capColor:'สี: '+this.fabricName(), capSize:'ขนาด '+s.size, capEdge: s.goldEdge?'ขอบทอง: เปิด':'ขอบทอง: ปิด',
       edgeSubtitle: s.goldEdge?'เปิด — มีแถบขอบเข้ม':'ปิด — โบว์ผ้าเรียบ',
       toggleEdge:this.toggleEdge, trackStyle, knobStyle,
