@@ -377,7 +377,9 @@ export async function jobExpenses(db, jobId) {
 }
 
 // ---------- รายการโบว์ ----------
-const ORDER_FIELDS = ['order_date', 'style', 'channel', 'detail', 'customer', 'price', 'paid_at', 'wage', 'wage_paid_at'];
+const ORDER_FIELDS = [
+  'order_date', 'style', 'channel', 'detail', 'customer', 'price', 'deposit', 'paid_at', 'shipped_at', 'wage', 'wage_paid_at',
+];
 
 export async function addOrder(db, o) {
   const res = await db.prepare(`
@@ -417,10 +419,10 @@ export async function maxOrderId(db) {
 /** จดลงเลขที่ระบุ ใช้เมื่อเจ้าของร้านพิมพ์เลขถัดไปมาเอง ("รายการ 7 แบบ ML") — ผู้เรียกต้องเช็กว่าเลขนั้นยังไม่มี */
 export async function addOrderAt(db, id, o) {
   await db.prepare(`
-    INSERT INTO bow_orders (id, order_date, style, channel, detail, customer, price, paid_at, wage, wage_paid_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO bow_orders (id, order_date, style, channel, detail, customer, price, paid_at, wage, wage_paid_at, deposit, shipped_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(id, o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null,
-    o.paid_at ?? null, o.wage ?? null, o.wage_paid_at ?? null).run();
+    o.paid_at ?? null, o.wage ?? null, o.wage_paid_at ?? null, o.deposit ?? null, o.shipped_at ?? null).run();
 }
 
 export const orderById = (db, id) =>

@@ -124,7 +124,7 @@ export const SCHEMA = {
     order: {
       type: 'object',
       additionalProperties: false,
-      required: ['id', 'style', 'channel', 'detail', 'customer', 'price', 'order_date', 'qty', 'paid', 'wage', 'wage_paid'],
+      required: ['id', 'style', 'channel', 'detail', 'customer', 'price', 'order_date', 'qty', 'paid', 'wage', 'wage_paid', 'deposit', 'shipped'],
       properties: {
         id:         { type: 'number', description: 'เลขรายการที่จะแก้หรือลบ ไม่ใช่กรณีนั้นให้ใส่ 0' },
         style:      { type: 'string', description: 'แบบของโบว์ เช่น แบบที่ 2, ML, mini, ดอกไม้' },
@@ -136,6 +136,8 @@ export const SCHEMA = {
         qty:        { type: 'number', description: 'จำนวนชิ้นที่สั่ง ไม่บอกให้ใส่ 1' },
         paid:       { type: 'string', description: 'ลูกค้าจ่ายค่าโบว์: paid = แจ้งว่าจ่าย/โอนแล้ว, unpaid = บอกว่ายังไม่จ่าย, "" = ไม่ได้พูดถึง' },
         wage:       { type: 'number', description: 'ค่าจ้างทำโบว์ต่อชิ้นเป็นบาท ไม่บอกให้ใส่ 0' },
+        deposit:    { type: 'number', description: 'เงินมัดจำที่ลูกค้าจ่ายมาแล้วเป็นบาท (จ่ายบางส่วน ยังไม่ครบ) ไม่บอกให้ใส่ 0' },
+        shipped:    { type: 'string', description: 'ส่งของให้ลูกค้า: shipped = ส่งแล้ว, unshipped = ยังไม่ส่ง ไม่พูดถึงให้ใส่ ""' },
         wage_paid:  { type: 'string', description: 'จ่ายค่าจ้างทำโบว์ให้ช่าง: paid = จ่ายค่าจ้างแล้ว, unpaid = ยังไม่จ่ายค่าจ้าง, "" = ไม่ได้พูดถึง' },
       },
     },
@@ -151,7 +153,7 @@ export const EMPTY = {
   holiday: { date: null, name: null },
   stock: { name: null, qty: 0, unit_cost: null, price: null, note: null },
   expense: { id: 0, category: null, amount: 0, spent_date: null, note: null },
-  order: { id: 0, style: null, channel: null, detail: null, customer: null, price: 0, order_date: null, qty: 1, paid: null, wage: 0, wage_paid: null },
+  order: { id: 0, style: null, channel: null, detail: null, customer: null, price: 0, order_date: null, qty: 1, paid: null, wage: 0, wage_paid: null, deposit: 0, shipped: null },
   failed: null,
 };
 
@@ -225,6 +227,8 @@ function normalize(raw) {
       paid: str(od.paid),
       wage: num(od.wage),
       wage_paid: str(od.wage_paid),
+      deposit: num(od.deposit),
+      shipped: str(od.shipped),
     },
     failed: null,
   };
@@ -300,6 +304,8 @@ function systemPrompt(today) {
   = order.wage = 150, "รายการ 24 จ่ายค่าจ้างแล้ว" = order.wage_paid = "paid",
   "รายการ 24 ยังไม่จ่ายค่าจ้าง" = order.wage_paid = "unpaid"
   ถ้าพูดว่า "จ่ายแล้ว" เฉยๆ ไม่มีคำว่าค่าจ้าง = order.paid (ลูกค้าจ่าย) ไม่ใช่ wage_paid
+  มัดจำ = ลูกค้าจ่ายมาบางส่วน เช่น "รายการ 24 มัดจำ 1000" = order.deposit = 1000 (ไม่ใช่ order.paid — paid คือจ่ายครบ)
+  ส่งของ เช่น "รายการ 24 ส่งแล้ว" = order.shipped = "shipped", "รายการ 24 ยังไม่ส่ง" = "unshipped" (คนละเรื่องกับจ่ายเงิน)
   ตอนสั่งใหม่บอกค่าจ้างมาด้วยก็ได้ เช่น "สั่งโบว์ ML 10 ชิ้น ค่าจ้างชิ้นละ 150" = add_order + order.wage = 150
   ต่างจาก add_order ตรงที่มีเลขรายการอ้างอยู่ — ไม่มีเลขเมื่อไหร่คือ add_order
   เลขที่ตามหลังคำว่า "รายการ" คือเลขรายการ (order.id) เสมอ ห้ามอ่านเป็นจำนวนชิ้น แม้จะขึ้นต้นว่า "สั่งใหม่"

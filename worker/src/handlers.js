@@ -22,10 +22,10 @@ import { readVatMode, parseTaxId } from './text.js';
 import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP } from './draft.js';
 import { huntLead } from './leads.js';
 import { push } from './line.js';
-import { summarizeOrders } from './order-sheet.js';
+import { summarizeOrders, orderRemaining } from './order-sheet.js';
 import {
   ORDER_HELP, ORDER_MAX_PER_COMMAND, readOrderIds, orderIdList,
-  parseOrderEdit, parseOrderView, parseOrderVoid, filterOrders, orderViewTitle, styleName,
+  parseOrderEdit, parseOrderView, parseOrderVoid, filterOrders, orderViewTitle, styleName, SYES, SNO,
 } from './order-text.js';
 import {
   todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
@@ -78,6 +78,7 @@ export const HELP = `คำสั่งที่ใช้ได้
 • รายการ 24 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900   (แก้ = รายการ + เลข + ชื่อช่อง + ค่าใหม่)
 • รายการ 24 จ่ายแล้ว   /   รายการ 8-12 จ่ายแล้ว              (ลูกค้าจ่าย)
 • รายการ 1-10 ค่าจ้าง 150   /   รายการ 1-10 จ่ายค่าจ้างแล้ว    (ค่าจ้างทำโบว์)
+• รายการ 24 มัดจำ 1000   /   รายการ 24 ส่งแล้ว             (มัดจำ และส่งของแล้ว)
 • ลบรายการ 24   /   ลบรายการ 9-23   (ยกเลิก ไม่ลบ ประวัติยังอยู่)
 • ย้อนกลับ   /   เดินหน้า          (ย้อนคำสั่งรายการทีละคำสั่ง ย้อนเกินก็เดินหน้ากลับมาได้)
 • ตารางรายการ                   (ลิงก์ตาราง A4 ของเดือนนี้ เปิดดูหรือบันทึก PDF ได้)
@@ -1070,7 +1071,9 @@ const orderCard = (o) => [
   `ช่องทาง: ${o.channel ?? '-'}`,
   `ผู้สั่ง: ${o.customer ?? '-'}`,
   `ราคา: ${orderPrice(o)}`,
+  `มัดจำ: ${o.deposit != null ? `${fmtBaht(o.deposit)} บาท (คงเหลือ ${fmtBaht(orderRemaining(o) ?? 0)})` : '-'}`,
   `จ่ายแล้ว: ${o.paid_at ? '✓' : '-'}`,
+  `ส่งแล้ว: ${o.shipped_at ? '✓' : '-'}`,
   `ค่าจ้างทำ: ${o.wage != null ? fmtBaht(o.wage) + ' บาท' : '-'}${o.wage_paid_at ? ' (จ่ายแล้ว ✓)' : ''}`,
 ].join('\n');
 
@@ -1080,6 +1083,15 @@ function readPaid(text) {
   if (!t) return null;
   if (/unpaid|ยังไม่|ไม่ได้จ่าย|ค้าง/.test(t)) return false;
   if (/paid|จ่าย|โอน|ชำระ/.test(t)) return true;
+  return null;
+}
+
+/** "shipped" / "ส่งแล้ว" -> true, "unshipped" / "ยังไม่ส่ง" -> false, ไม่พูดถึง -> null */
+function readShipped(text) {
+  const t = String(text ?? '').trim().toLowerCase();
+  if (!t) return null;
+  if (/unshipped|ยังไม่/.test(t)) return false;
+  if (/shipped|ส่ง/.test(t)) return true;
   return null;
 }
 
@@ -1178,17 +1190,18 @@ export async function doAddOrder(env, cmd, uid = null) {
 
 /** ช่องข้อมูลของแถวเปล่า — จดทับเลขที่ลบไว้ต้องล้างของเดิมทุกช่อง ไม่ให้ชื่อลูกค้าเก่าหรือติ๊กจ่ายเก่าค้างมา */
 const BLANK_ORDER = {
-  channel: null, detail: null, customer: null, price: null, paid_at: null, wage: null, wage_paid_at: null,
+  channel: null, detail: null, customer: null, price: null, deposit: null, paid_at: null, shipped_at: null,
+  wage: null, wage_paid_at: null,
 };
 
 const ORDER_LABEL = {
   style: 'แบบ', channel: 'ช่องทาง', detail: 'รายละเอียด', customer: 'ผู้สั่ง', price: 'ราคา', order_date: 'วันที่',
-  paid_at: 'จ่ายแล้ว', wage: 'ค่าจ้างทำ', wage_paid_at: 'จ่ายค่าจ้างแล้ว',
+  paid_at: 'จ่ายแล้ว', wage: 'ค่าจ้างทำ', wage_paid_at: 'จ่ายค่าจ้างแล้ว', deposit: 'มัดจำ', shipped_at: 'ส่งแล้ว',
 };
 const orderShow = (k, v) => (v == null ? '-'
-  : k === 'price' || k === 'wage' ? fmtBaht(v)
+  : k === 'price' || k === 'wage' || k === 'deposit' ? fmtBaht(v)
     : k === 'order_date' ? thaiDateNum(v)
-      : k === 'paid_at' || k === 'wage_paid_at' ? '✓' : v);
+      : k === 'paid_at' || k === 'wage_paid_at' || k === 'shipped_at' ? '✓' : v);
 
 /**
  * คำสั่งที่ทำกับหลายรายการพร้อมกัน อ่านจากข้อความตรงๆ ไม่ผ่าน AI
@@ -1219,8 +1232,10 @@ export async function doMarkPaid(env, msg, uid = null) {
     [field, paid] = ['wage_paid_at', false];
   } else if (new RegExp(`^(?:${yes}|${no})$`, 'u').test(rest)) {
     [field, paid] = ['paid_at', readPaid(rest)];
+  } else if (new RegExp(`^(?:${SYES}|${SNO})$`, 'u').test(rest)) {
+    [field, paid] = ['shipped_at', !/ยังไม่/.test(rest)];   // ส่งของให้ลูกค้าแล้ว — คนละช่องกับเรื่องเงิน
   } else return null;
-  const what = field === 'paid_at' ? 'จ่ายแล้ว' : 'จ่ายค่าจ้างแล้ว';
+  const what = { paid_at: 'จ่ายแล้ว', wage_paid_at: 'จ่ายค่าจ้างแล้ว', shipped_at: 'ส่งแล้ว' }[field];
 
   const got = readOrderIds(m[1]);
   if (got.error) return got.error;
@@ -1337,6 +1352,7 @@ async function runOrderEdit(env, uid, cmd, today) {
     const want = { ...cmd.set };
     if (cmd.paid != null && Boolean(row.paid_at) !== cmd.paid) want.paid_at = cmd.paid ? today : null;
     if (cmd.wagePaid != null && Boolean(row.wage_paid_at) !== cmd.wagePaid) want.wage_paid_at = cmd.wagePaid ? today : null;
+    if (cmd.shipped != null && Boolean(row.shipped_at) !== cmd.shipped) want.shipped_at = cmd.shipped ? today : null;
     return want;
   }, { create: { today } });
 
@@ -1344,6 +1360,7 @@ async function runOrderEdit(env, uid, cmd, today) {
     ...Object.keys(cmd.set).map((k) => `${ORDER_LABEL[k]} ${orderShow(k, cmd.set[k])}`),
     cmd.paid === true ? 'จ่ายแล้ว ✓' : cmd.paid === false ? 'เอาติ๊กจ่ายแล้วออก' : null,
     cmd.wagePaid === true ? 'จ่ายค่าจ้างแล้ว ✓' : cmd.wagePaid === false ? 'เอาติ๊กจ่ายค่าจ้างออก' : null,
+    cmd.shipped === true ? 'ส่งแล้ว ✓' : cmd.shipped === false ? 'เอาติ๊กส่งแล้วออก' : null,
   ].filter(Boolean).join(' · ');
   const n = res.done.length;
   // จดลงเลขที่ว่างกับแก้ของที่มีอยู่ ปนกันในคำสั่งเดียวได้ — บอกแยกให้เห็นว่าเลขไหนเป็นของใหม่
@@ -1386,7 +1403,10 @@ export async function doEditOrder(env, cmd, uid = null) {
     if (o.price > 0) set.price = toSatang(o.price);
     if (isValidYmd(o.order_date)) set.order_date = o.order_date;
     if (o.wage > 0) set.wage = toSatang(o.wage);
-    return runOrderEdit(env, uid, { ids: [id], set, paid: readPaid(o.paid), wagePaid: readPaid(o.wage_paid) }, todayBkk());
+    if (o.deposit > 0) set.deposit = toSatang(o.deposit);
+    return runOrderEdit(env, uid, {
+      ids: [id], set, paid: readPaid(o.paid), wagePaid: readPaid(o.wage_paid), shipped: readShipped(o.shipped),
+    }, todayBkk());
   }
 
   const want = {
@@ -1397,12 +1417,16 @@ export async function doEditOrder(env, cmd, uid = null) {
     price: o.price > 0 ? toSatang(o.price) : undefined,
     order_date: isValidYmd(o.order_date) ? o.order_date : undefined,
     wage: o.wage > 0 ? toSatang(o.wage) : undefined,
+    deposit: o.deposit > 0 ? toSatang(o.deposit) : undefined,
   };
   // จ่ายแล้วเก็บเป็นวันที่ที่แจ้ง ติ๊กซ้ำไม่เลื่อนวัน ส่วน "ยังไม่จ่าย" คือเอาติ๊กออก
   // ลูกค้าจ่ายค่าโบว์ (paid) กับร้านจ่ายค่าจ้างช่าง (wage_paid) เป็นสองช่องแยกกัน
   const paid = readPaid(o.paid);
   if (paid === true && !row.paid_at) want.paid_at = todayBkk();
   if (paid === false && row.paid_at) want.paid_at = null;
+  const shipped = readShipped(o.shipped);
+  if (shipped === true && !row.shipped_at) want.shipped_at = todayBkk();
+  if (shipped === false && row.shipped_at) want.shipped_at = null;
   const wagePaid = readPaid(o.wage_paid);
   if (wagePaid === true && !row.wage_paid_at) want.wage_paid_at = todayBkk();
   if (wagePaid === false && row.wage_paid_at) want.wage_paid_at = null;
@@ -1462,7 +1486,9 @@ async function doListOrders(env, cmd) {
     + `${s.count} รายการ · มีผู้สั่งแล้ว ${s.count - s.free} · ยังว่าง ${s.free}`
     + (s.noPrice ? `\n(ยังไม่ใส่ราคา ${s.noPrice} รายการ)` : '')
     + `\n\n💰 ราคาขายรวม ${fmtBaht(s.price)}`
-    + `\nลูกค้าจ่ายแล้ว ${fmtBaht(s.pricePaid)} (${s.paidCount} ชิ้น) · ยังไม่จ่าย ${fmtBaht(s.price - s.pricePaid)}`
+    + `\nจ่ายครบ ${fmtBaht(s.pricePaid)} (${s.paidCount} ชิ้น) · มัดจำ ${fmtBaht(s.deposit)} (${s.depositCount} ชิ้น)`
+    + `\nคงเหลือต้องเก็บ ${fmtBaht(s.remaining)}`
+    + `\n\n🚚 ส่งแล้ว ${s.shippedCount} / ${s.count} ชิ้น`
     + `\n\n🧵 ค่าจ้างทำรวม ${fmtBaht(s.wage)}`
     + `\nจ่ายแล้ว ${fmtBaht(s.wagePaid)} (${s.wagePaidCount} ชิ้น) · ค้างจ่าย ${fmtBaht(s.wage - s.wagePaid)}`
     + `\n\nเปิดตาราง (พิมพ์หรือบันทึก PDF ได้จากในหน้า):\n${await orderSheetUrl(env, ym)}`;
@@ -1474,6 +1500,8 @@ const ORDER_LIST_MAX = 30;   // เกินนี้อ่านในแชต
 const orderLine = (o, withWage) => `#${o.id} ${o.style}${o.detail ? ' ' + o.detail : ''}`
   + ` · ${o.customer ?? 'ว่าง'}${o.channel ? ' ' + o.channel : ''}`
   + ` · ${o.price != null ? fmtBaht(o.price) : '-'}${o.paid_at ? ' ✓' : ''}`
+  + (o.deposit != null && !o.paid_at ? ` (มัดจำ ${fmtBaht(o.deposit)} เหลือ ${fmtBaht(orderRemaining(o) ?? 0)})` : '')
+  + (o.shipped_at ? ' · ส่งแล้ว' : '')
   + (withWage ? ` · จ้าง ${o.wage != null ? fmtBaht(o.wage) : '-'}${o.wage_paid_at ? ' ✓' : ''}` : '');
 
 /**

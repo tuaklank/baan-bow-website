@@ -11,11 +11,13 @@ import { esc } from './render.js';
 // ลำดับช่อง: แบบโบว์กับรายละเอียดคือ "ของ" ที่รู้ตั้งแต่ตอนสั่งมาไว้
 // ช่องทางกับผู้สั่งอยู่ติดกันเพราะเติมพร้อมกันทีหลังตอนมีลูกค้า ตามด้วยราคากับช่องติ๊กว่าลูกค้าจ่ายแล้ว
 // ปิดท้ายด้วยค่าจ้างทำโบว์กับช่องติ๊กว่าจ่ายช่างแล้ว — เงินเข้าอยู่ซ้าย เงินออกอยู่ขวา คั่นด้วยเส้น
+// มัดจำกับคงเหลืออยู่ติดราคา: รับมัดจำมาเท่าไร เหลือต้องเก็บอีกเท่าไร อ่านต่อกันได้ในบรรทัดเดียว
+// ส่งแล้วอยู่ถัดจากจ่ายแล้ว เพราะเป็นสองเรื่องที่ต้องปิดให้ครบก่อนถือว่ารายการนั้นจบ
 // ช่องที่ยังไม่มีข้อมูลเว้นว่างจริงๆ ไม่ใส่ขีด — ตารางนี้ส่วนใหญ่ว่างตอนเพิ่งสั่งของมา ขีดเต็มหน้าจะรก
 
 // แถวว่างเติมให้กระดาษไม่โล่งตอนรายการยังน้อย เหมือนสมุดที่ตีเส้นรอไว้
 const MIN_ROWS = 8;
-const COLS = 10;
+const COLS = 13;
 
 /**
  * ยอดสรุปของรายการชุดหนึ่ง — ใช้ทั้งหน้าตาราง A4 คำตอบในไลน์ และหน้าหลังบ้าน
@@ -27,7 +29,10 @@ export function summarizeOrders(rows) {
     count: rows.length,
     free: 0,            // ยังไม่มีผู้สั่ง
     noPrice: 0, noWage: 0,
-    price: 0, pricePaid: 0, paidCount: 0,       // ราคาขาย / ลูกค้าจ่ายแล้ว
+    price: 0, pricePaid: 0, paidCount: 0,       // ราคาขาย / ลูกค้าจ่ายครบแล้ว
+    deposit: 0, depositCount: 0,                // มัดจำของชิ้นที่ยังจ่ายไม่ครบ (ชิ้นที่จ่ายครบแล้วนับใน pricePaid)
+    received: 0, remaining: 0,                  // เงินที่รับมาแล้วจริง / ยังต้องเก็บจากลูกค้า
+    shippedCount: 0,
     wage: 0, wagePaid: 0, wagePaidCount: 0,     // ค่าจ้างทำ / จ่ายช่างแล้ว
     byStyle: [],
   };
@@ -41,6 +46,8 @@ export function summarizeOrders(rows) {
     s.price += price;
     s.wage += wage;
     if (r.paid_at) { s.pricePaid += price; s.paidCount++; }
+    else if (r.deposit) { s.deposit += r.deposit; s.depositCount++; }
+    if (r.shipped_at) s.shippedCount++;
     if (r.wage_paid_at) { s.wagePaid += wage; s.wagePaidCount++; }
 
     let g = styles.get(r.style);
@@ -52,6 +59,8 @@ export function summarizeOrders(rows) {
     g.wage += wage;
   }
   s.byStyle = [...styles.values()];
+  s.received = s.pricePaid + s.deposit;
+  s.remaining = s.price - s.received;
   return s;
 }
 
@@ -75,8 +84,11 @@ header{margin-top:1mm;align-items:center}
 .stats .grand{background:var(--wine);border-color:var(--wine)}
 .stats .grand span,.stats .grand b{color:#fff}
 /* แม่แบบไล่สีทีละช่อง สามช่องดูเนียน แต่สิบช่องเห็นเป็นแถบสลับ จึงใช้สีเดียวทั้งแถว */
-thead th{background:var(--wine);white-space:nowrap;padding:6px 5px;font-size:12px;vertical-align:middle}
-tbody td{font-size:12px;vertical-align:middle;padding:6px 5px}
+thead th{background:var(--wine);white-space:nowrap;padding:6px 3px;font-size:11px;vertical-align:middle}
+tbody td{font-size:11px;vertical-align:middle;padding:6px 3px}
+td.r{white-space:nowrap;font-variant-numeric:tabular-nums}
+/* คงเหลือ = เงินที่ยังต้องเก็บ ให้เด่นกว่าตัวเลขอื่นในแถว */
+td.rem{font-weight:600;color:var(--wine)}
 td.style{font-weight:600}
 /* เส้นคั่นระหว่างฝั่งเงินเข้า (ราคา/ลูกค้าจ่าย) กับฝั่งเงินออก (ค่าจ้าง/จ่ายช่าง) */
 .out{border-left:1.5px solid var(--gold)}
@@ -85,8 +97,8 @@ thead th.out{border-left-color:rgba(255,255,255,.55)}
 .tick{display:inline-block;width:4.4mm;height:4.4mm;border:1.4px solid #9CA3AF;border-radius:3px;
   font:700 12px/3.8mm 'Sarabun';text-align:center;color:#fff;vertical-align:middle}
 .tick.on{background:#15803D;border-color:#15803D}
-tfoot td{padding:7px 5px;font-weight:600;border-top:2px solid var(--wine);font-size:12px}
-tfoot td.sum{font:700 13px 'Prompt';color:var(--wine)}
+tfoot td{padding:7px 3px;font-weight:600;border-top:2px solid var(--wine);font-size:11px}
+tfoot td.sum{font:700 11.5px 'Prompt';color:var(--wine);white-space:nowrap}
 
 /* สรุปยอดท้ายตาราง */
 .recap{margin-top:7mm;break-inside:avoid;page-break-inside:avoid}
@@ -114,6 +126,16 @@ tr{break-inside:avoid;page-break-inside:avoid}
 
 const cell = (v) => `<td>${v == null ? '' : esc(v)}</td>`;
 const money = (v) => (v != null ? fmtBaht(v) : '');
+/**
+ * ยอดที่ยังต้องเก็บจากลูกค้าของรายการนี้ (สตางค์) หรือ null ถ้าไม่มีอะไรให้แสดง
+ * จ่ายครบแล้ว = 0, มีมัดจำ = ราคา - มัดจำ, ไม่มีมัดจำและยังไม่จ่าย = ว่าง (ราคาเต็มอยู่ในช่องราคาแล้ว)
+ */
+export function orderRemaining(r) {
+  if (r.price == null) return null;
+  if (r.paid_at) return 0;
+  return r.deposit != null ? Math.max(0, r.price - r.deposit) : null;
+}
+
 const tick = (on) => `<span class="tick${on ? ' on' : ''}">${on ? '✓' : ''}</span>`;
 
 /**
@@ -126,7 +148,8 @@ export function renderOrderSheet({ ym, rows, today }) {
 
   const body = rows.map((r) => `      <tr><td class="c">${r.id}</td><td class="c">${dayMonth(r.order_date)}</td>`
     + `<td class="style">${esc(r.style)}</td>${cell(r.detail)}${cell(r.channel)}${cell(r.customer)}`
-    + `<td class="r">${money(r.price)}</td><td class="c">${tick(r.paid_at)}</td>`
+    + `<td class="r">${money(r.price)}</td><td class="r">${money(r.deposit)}</td><td class="r rem">${money(orderRemaining(r))}</td>`
+    + `<td class="c">${tick(r.paid_at)}</td><td class="c">${tick(r.shipped_at)}</td>`
     + `<td class="r out">${money(r.wage)}</td><td class="c">${tick(r.wage_paid_at)}</td></tr>`).join('\n');
 
   const fill = Array.from(
@@ -174,28 +197,32 @@ export function renderOrderSheet({ ym, rows, today }) {
   <div class="stats">
     <div><span>จำนวนทั้งหมด</span><b>${s.count} ชิ้น</b></div>
     <div><span>ยังไม่มีผู้สั่ง</span><b>${s.free} ชิ้น</b></div>
-    <div><span>ลูกค้าจ่ายแล้ว</span><b>${s.paidCount} / ${s.count}</b></div>
+    <div><span>ลูกค้าจ่ายครบ</span><b>${s.paidCount} / ${s.count}</b></div>
+    <div><span>ส่งแล้ว</span><b>${s.shippedCount} / ${s.count}</b></div>
     <div><span>จ่ายค่าจ้างแล้ว</span><b>${s.wagePaidCount} / ${s.count}</b></div>
   </div>
 
   <table class="orders">
     <thead><tr>
-      <th style="width:11mm">รายการ</th>
-      <th style="width:12mm">วันที่</th>
-      <th style="width:22mm;text-align:left">แบบโบว์</th>
+      <th style="width:9mm">รายการ</th>
+      <th style="width:10mm">วันที่</th>
+      <th style="width:15mm;text-align:left">แบบโบว์</th>
       <th style="text-align:left">รายละเอียด</th>
-      <th style="width:15mm;text-align:left">ช่องทาง</th>
-      <th style="width:26mm;text-align:left">ผู้สั่ง</th>
-      <th style="width:20mm" class="r">ราคา</th>
-      <th style="width:14mm">จ่ายแล้ว</th>
-      <th style="width:18mm" class="r out">ค่าจ้างทำ</th>
-      <th style="width:14mm">จ่ายแล้ว</th>
+      <th style="width:11mm;text-align:left">ช่องทาง</th>
+      <th style="width:15mm;text-align:left">ผู้สั่ง</th>
+      <th style="width:16mm" class="r">ราคา</th>
+      <th style="width:15mm" class="r">มัดจำ</th>
+      <th style="width:16mm" class="r">คงเหลือ</th>
+      <th style="width:10mm">จ่ายแล้ว</th>
+      <th style="width:10mm">ส่งแล้ว</th>
+      <th style="width:15mm" class="r out">ค่าจ้างทำ</th>
+      <th style="width:10mm">จ่ายแล้ว</th>
     </tr></thead>
     <tbody>
 ${body}
 ${fill}
     </tbody>
-    <tfoot><tr><td colspan="6" class="r">รวม ${s.count} ชิ้น</td><td class="r sum">${fmtBaht(s.price)}</td><td></td><td class="r sum out">${fmtBaht(s.wage)}</td><td></td></tr></tfoot>
+    <tfoot><tr><td colspan="6" class="r">รวม ${s.count} ชิ้น</td><td class="r sum">${fmtBaht(s.price)}</td><td class="r sum">${fmtBaht(s.deposit)}</td><td class="r sum">${fmtBaht(s.remaining)}</td><td></td><td></td><td class="r sum out">${fmtBaht(s.wage)}</td><td></td></tr></tfoot>
   </table>
 
   <section class="recap">
@@ -204,8 +231,9 @@ ${fill}
       <div class="card">
         <h4>ราคาขาย (ลูกค้าจ่าย)</h4>
         <div class="top"><span>รวมทั้งหมด</span><b>${fmtBaht(s.price)}</b></div>
-        <div class="ok"><span>จ่ายแล้ว ${s.paidCount} ชิ้น</span><b>${fmtBaht(s.pricePaid)}</b></div>
-        <div class="warn"><span>ยังไม่จ่าย ${s.count - s.paidCount} ชิ้น</span><b>${fmtBaht(s.price - s.pricePaid)}</b></div>
+        <div class="ok"><span>จ่ายครบ ${s.paidCount} ชิ้น</span><b>${fmtBaht(s.pricePaid)}</b></div>
+        <div class="ok"><span>มัดจำ ${s.depositCount} ชิ้น</span><b>${fmtBaht(s.deposit)}</b></div>
+        <div class="warn"><span>คงเหลือต้องเก็บ</span><b>${fmtBaht(s.remaining)}</b></div>
       </div>
       <div class="card">
         <h4>ค่าจ้างทำโบว์ (จ่ายช่าง)</h4>
@@ -216,8 +244,8 @@ ${fill}
       <div class="card net">
         <h4>คงเหลือหลังหักค่าจ้าง</h4>
         <div class="top"><span>ถ้าขายและจ่ายครบทุกชิ้น</span><b>${fmtBaht(s.price - s.wage)}</b></div>
-        <div><span>ตอนนี้รับเงินมาแล้ว</span><b>${fmtBaht(s.pricePaid)}</b></div>
-        <div><span>หักค่าจ้างที่จ่ายไป เหลือ</span><b>${fmtBaht(s.pricePaid - s.wagePaid)}</b></div>
+        <div><span>ตอนนี้รับเงินมาแล้ว (รวมมัดจำ)</span><b>${fmtBaht(s.received)}</b></div>
+        <div><span>หักค่าจ้างที่จ่ายไป เหลือ</span><b>${fmtBaht(s.received - s.wagePaid)}</b></div>
       </div>
     </div>
 
@@ -238,7 +266,7 @@ ${styleRows}
     ${pending ? `<small>${pending} — ยอดรวมข้างบนยังไม่นับชิ้นเหล่านี้</small>` : ''}
   </section>
 
-  <div class="updated">ข้อมูล ณ วันที่ ${thaiSlash(today)} · เติมทางไลน์ได้ เช่น "รายการ ${eg} ผู้สั่ง คุณเอ ช่องทาง Line" · "รายการ ${eg} จ่ายแล้ว" · "รายการ ${eg} ค่าจ้าง 150" แล้วเปิดหน้านี้ใหม่</div>
+  <div class="updated">ข้อมูล ณ วันที่ ${thaiSlash(today)} · เติมทางไลน์ได้ เช่น "รายการ ${eg} ผู้สั่ง คุณเอ ช่องทาง Line" · "รายการ ${eg} มัดจำ 1000" · "รายการ ${eg} จ่ายแล้ว" · "รายการ ${eg} ส่งแล้ว" แล้วเปิดหน้านี้ใหม่</div>
   <footer>${esc(BRAND.footer)}</footer>
 </div>
 </body>

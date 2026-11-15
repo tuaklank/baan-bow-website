@@ -121,7 +121,8 @@ test('หน้าตาราง: ลำดับช่องตามที่
   const main = page.slice(page.indexOf('<table class="orders">'), page.indexOf('</thead>'));
   const heads = [...main.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]);
   assert.deepEqual(heads, [
-    'รายการ', 'วันที่', 'แบบโบว์', 'รายละเอียด', 'ช่องทาง', 'ผู้สั่ง', 'ราคา', 'จ่ายแล้ว', 'ค่าจ้างทำ', 'จ่ายแล้ว',
+    'รายการ', 'วันที่', 'แบบโบว์', 'รายละเอียด', 'ช่องทาง', 'ผู้สั่ง', 'ราคา', 'มัดจำ', 'คงเหลือ', 'จ่ายแล้ว', 'ส่งแล้ว',
+    'ค่าจ้างทำ', 'จ่ายแล้ว',
   ]);
 
   assert.ok(page.includes('พฤศจิกายน 2569'));
@@ -143,9 +144,10 @@ test('ช่องติ๊กว่างไว้เป็นกรอบเ�
   const [r1, r2, r3] = page.match(/<tr><td class="c">\d+<\/td>.*<\/tr>/g);
   const ticks = (r) => [...r.matchAll(/<span class="tick( on)?">/g)].map((m) => Boolean(m[1]));
 
-  assert.deepEqual(ticks(r1), [false, false], 'สั่งมาใหม่ = กรอบเปล่าทั้งสองช่อง');
-  assert.deepEqual(ticks(r2), [true, false], 'ลูกค้าจ่ายแล้ว แต่ยังไม่ได้จ่ายค่าจ้าง');
-  assert.deepEqual(ticks(r3), [false, true], 'จ่ายค่าจ้างแล้ว แต่ลูกค้ายังไม่จ่าย');
+  // ช่องติ๊กสามช่องต่อแถว: ลูกค้าจ่ายแล้ว / ส่งแล้ว / จ่ายค่าจ้างแล้ว
+  assert.deepEqual(ticks(r1), [false, false, false], 'สั่งมาใหม่ = กรอบเปล่าทุกช่อง');
+  assert.deepEqual(ticks(r2), [true, false, false], 'ลูกค้าจ่ายแล้ว แต่ยังไม่ส่งและยังไม่ได้จ่ายค่าจ้าง');
+  assert.deepEqual(ticks(r3), [false, false, true], 'จ่ายค่าจ้างแล้ว แต่ลูกค้ายังไม่จ่าย');
   // โบว์ที่สั่งมาไว้ก่อน ช่องทาง/ผู้สั่ง/รายละเอียด/ราคา/ค่าจ้าง ต้องว่างจริงๆ รอเติม ไม่ใส่ขีด
   assert.ok(r1.includes('<td></td><td></td><td></td><td class="r"></td>'));
   assert.ok(r1.includes('<td class="r out"></td>'));
@@ -216,7 +218,7 @@ test('พิมพ์ "รายการ" ได้ลิงก์ตารา�
   assert.ok(answer.includes('ราคาขายรวม 2,900.00'));
   assert.ok(answer.includes('ค่าจ้างทำรวม 0.00'));
   assert.ok(answer.includes('ยังไม่ใส่ราคา 1 รายการ'));
-  assert.ok(answer.split('\n').length <= 14, 'คำตอบมีแค่ยอดสรุป รายการทีละชิ้นอยู่ในหน้าตาราง');
+  assert.ok(answer.split('\n').length <= 16, 'คำตอบมีแค่ยอดสรุป รายการทีละชิ้นอยู่ในหน้าตาราง');
   assert.ok(!answer.includes('คุณเอ'), 'ไม่พิมพ์รายการทีละรายการลงแชต');
 });
 
@@ -856,4 +858,89 @@ test('ทางที่ AI อ่านมา: แก้เลขที่ว�
 
   await handleText(e, 'U1', 'ย้อนกลับ');
   assert.equal((await orderById(db, 6)).status, 'void', 'ย้อนกลับแล้วเลข 6 ต้องกลับไปว่าง');
+});
+
+// ---------- มัดจำ / คงเหลือ / ส่งแล้ว ----------
+
+test('มัดจำ: ใส่ยอดแล้วคงเหลือคิดให้เอง จ่ายครบแล้วคงเหลือเป็น 0 ไม่มีมัดจำเว้นว่าง', () => {
+  const rows = [
+    row({ id: 1, customer: 'คุณเอ', price: 400000, deposit: 150000 }),
+    row({ id: 2, customer: 'คุณบี', price: 400000, deposit: 100000, paid_at: '2026-11-16' }),
+    row({ id: 3, customer: 'คุณซี', price: 400000 }),
+    row({ id: 4 }),
+  ];
+  const page = renderOrderSheet({ ym: '2026-11', rows, today: '2026-11-16' });
+  const [r1, r2, r3, r4] = page.match(/<tr><td class="c">\d+<\/td>.*<\/tr>/g);
+  assert.ok(r1.includes('<td class="r">1,500.00</td><td class="r rem">2,500.00</td>'));
+  assert.ok(r2.includes('<td class="r">1,000.00</td><td class="r rem">0.00</td>'), 'จ่ายครบแล้วคงเหลือ 0');
+  assert.ok(r3.includes('<td class="r"></td><td class="r rem"></td>'), 'ไม่มีมัดจำ เว้นว่างทั้งมัดจำและคงเหลือ');
+  assert.ok(r4.includes('<td class="r"></td><td class="r"></td><td class="r rem"></td>'));
+
+  const s = summarizeOrders(rows);
+  assert.equal(s.pricePaid, 400000, 'จ่ายครบ 1 ชิ้น');
+  assert.equal(s.deposit, 150000, 'มัดจำนับเฉพาะชิ้นที่ยังจ่ายไม่ครบ — ชิ้นที่จ่ายครบแล้วนับเต็มราคา ไม่นับซ้ำ');
+  assert.equal(s.received, 550000);
+  assert.equal(s.remaining, 1200000 - 550000);
+  assert.equal(s.depositCount, 1);
+});
+
+test('สั่งทางไลน์: มัดจำ ส่งแล้ว ยังไม่ส่ง ทั้งแบบบรรทัดเดียว หลายชิ้น และแบบการ์ด', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 4, customer: 'lek', price: 3000 }));
+
+  const a = await handleText(e, 'U1', 'รายการ 1 มัดจำ 1,000');
+  assert.ok(a.includes('แก้รายการ #1 แล้ว') && a.includes('มัดจำ 1,000.00'), a);
+  assert.equal((await orderById(db, 1)).deposit, 100000);
+  assert.equal((await orderById(db, 1)).paid_at, null, 'มัดจำไม่ใช่จ่ายครบ ช่องจ่ายแล้วต้องยังว่าง');
+
+  const b = await handleText(e, 'U1', 'รายการ 1-3 ส่งแล้ว');
+  assert.ok(b.includes('ติ๊กส่งแล้ว 3 รายการ: #1–#3'), b);
+  let rows = await monthOrders(db, monthBkk());
+  assert.deepEqual(rows.map((r) => Boolean(r.shipped_at)), [true, true, true, false]);
+  assert.ok(rows.every((r) => r.paid_at == null && r.wage_paid_at == null), 'ส่งแล้วต้องไม่ไปติ๊กช่องเงิน');
+
+  await handleText(e, 'U1', 'รายการ 2 ยังไม่ส่ง');
+  assert.equal((await orderById(db, 2)).shipped_at, null);
+
+  // หลายเรื่องในข้อความเดียว
+  await handleText(e, 'U1', 'รายการ 4 มัดจำ 500 ส่งแล้ว');
+  let r4 = await orderById(db, 4);
+  assert.deepEqual([r4.deposit, Boolean(r4.shipped_at), r4.paid_at], [50000, true, null]);
+  await handleText(e, 'U1', 'รายการ 4 ส่งแล้ว จ่ายแล้ว');
+  r4 = await orderById(db, 4);
+  assert.ok(r4.paid_at && r4.shipped_at);
+
+  // ลบมัดจำ และย้อนกลับ
+  await handleText(e, 'U1', 'รายการ 1 มัดจำ -');
+  assert.equal((await orderById(db, 1)).deposit, null);
+  await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.equal((await orderById(db, 1)).deposit, 100000);
+
+  // การ์ด: ดูรายการแล้วคัดลอกกลับมาแก้ได้ และ "(คงเหลือ …)" ในการ์ดไม่ทำให้อ่านมัดจำพัง
+  const card = await handleText(e, 'U1', 'รายการ 1');
+  assert.ok(card.includes('มัดจำ: 1,000.00 บาท (คงเหลือ 2,000.00)') && card.includes('ส่งแล้ว: ✓'), card);
+  const c = await handleText(e, 'U1', 'รายการ 2\nราคา: 3,000.00 บาท\nมัดจำ: 1,500.00 บาท (คงเหลือ 1,500.00)\nจ่ายแล้ว: -\nส่งแล้ว: ✓');
+  assert.ok(c.includes('แก้รายการ #2 แล้ว'), c);
+  const r2 = await orderById(db, 2);
+  assert.deepEqual([r2.deposit, Boolean(r2.shipped_at), r2.paid_at], [150000, true, null]);
+});
+
+test('เรียกดู: รายการที่มัดจำแล้ว และรายการที่ยังไม่ส่ง', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3, customer: 'lek', price: 3000 }));
+  await doAddOrder(e, cmdOrder({ style: 'mini' }));          // ยังไม่มีผู้สั่ง
+  await handleText(e, 'U1', 'รายการ 1 มัดจำ 1000');
+  await handleText(e, 'U1', 'รายการ 2 ส่งแล้ว');
+
+  const dep = await handleText(e, 'U1', 'รายการ มัดจำ');
+  assert.ok(dep.includes('1 ชิ้น') && dep.includes('#1 ML') && dep.includes('มัดจำ 1,000.00 เหลือ 2,000.00'), dep);
+
+  const wait = await handleText(e, 'U1', 'รายการ ยังไม่ส่ง');
+  assert.ok(wait.includes('#1 ML') && wait.includes('#3 ML') && !wait.includes('#2 ML') && !wait.includes('#4 mini'),
+    'ยังไม่ส่ง = มีผู้สั่งแล้วแต่ยังไม่ส่ง ชิ้นที่ยังว่างไม่นับ');
+
+  const sum = await handleText(e, 'U1', 'ตารางรายการ');
+  assert.ok(sum.includes('มัดจำ 1,000.00 (1 ชิ้น)') && sum.includes('คงเหลือต้องเก็บ 8,000.00') && sum.includes('ส่งแล้ว 1 / 4'), sum);
 });

@@ -26,6 +26,7 @@ export const ORDER_HELP = `📌 วิธีสั่งรายการโบ
 • รายการ 3 รายละเอียด แดงทอง
 • รายการ 3 วันที่ 12/11
 • รายการ 3 ค่าจ้าง 150
+• รายการ 3 มัดจำ 1000           (คงเหลือคิดให้เอง = ราคา - มัดจำ)
 หลายช่องในข้อความเดียว (หรือพิมพ์บรรทัดละช่องแบบ "แบบ: ML" ก็ได้):
 • รายการ 3 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900
 หลายชิ้นพร้อมกัน: 1-10 หรือ 2 5 8
@@ -40,6 +41,8 @@ export const ORDER_HELP = `📌 วิธีสั่งรายการโบ
 • รายการ 3 ยังไม่จ่าย
 • รายการ 3 จ่ายค่าจ้างแล้ว      (จ่ายช่าง)
 • รายการ 3 ยังไม่จ่ายค่าจ้าง
+• รายการ 3 ส่งแล้ว              (ส่งของให้ลูกค้าแล้ว)
+• รายการ 3 ยังไม่ส่ง
 
 👀 เรียกดู
 • ตารางรายการ                 (ลิงก์ตาราง A4 เดือนนี้ + ยอดสรุป)
@@ -48,6 +51,8 @@ export const ORDER_HELP = `📌 วิธีสั่งรายการโบ
 • รายการ ว่าง                  (ยังไม่มีผู้สั่ง)
 • รายการ ยังไม่จ่าย             (มีผู้สั่งแล้ว ลูกค้ายังไม่จ่าย)
 • รายการ ค้างค่าจ้าง            (ยังไม่จ่ายช่าง)
+• รายการ มัดจำ                 (มัดจำแล้ว ยังจ่ายไม่ครบ)
+• รายการ ยังไม่ส่ง              (มีผู้สั่งแล้ว ยังไม่ส่ง)
 • รายการ แบบ ML
 • รายการ ผู้สั่ง คุณเอ
 • รายการ ช่องทาง Line
@@ -68,6 +73,9 @@ const WYES = '(?:จ่ายค่าจ้าง(?:ทำ)?(?:โบว์)?�
 const WNO = '(?:ยังไม่(?:ได้)?จ่ายค่าจ้าง(?:ทำ)?(?:โบว์)?)';
 const POLITE = /\s*(?:นะครับ|นะคะ|ครับ|ค่ะ|คะ)$/u;
 const CLEAR = /^(?:-|–|ว่าง|ไม่มี|ลบ)$/u;
+// ส่งของให้ลูกค้าแล้ว / ยังไม่ส่ง
+export const SYES = '(?:จัดส่งแล้ว|ส่งของแล้ว|ส่งแล้ว)';
+export const SNO = '(?:ยังไม่ได้ส่ง|ยังไม่ส่ง)';
 
 /** "8-12" = ช่วง, "8 9 12" หรือ "8,9,12" = ทีละเลข — คืน {ids} หรือ {error} */
 export function readOrderIds(text) {
@@ -111,15 +119,16 @@ const FIELD_RE = new RegExp(
   + '|(รายละเอียด(?:โบว์)?)(?=\\s|$)'
   + '|(วันที่)(?=\\s|\\d|$)'
   + '|(ค่าจ้าง(?:ทำ)?(?:โบว์)?(?:ชิ้นละ)?)(?=\\s|\\d|-|$)'
+  + '|(มัดจำ|ค่ามัดจำ)(?=\\s|\\d|-|$)'
   + ')', 'giu');
 // ชื่อช่องที่ตามด้วย : หรือ = (รูปแบบการ์ด) — ตัดเครื่องหมายออกให้เหลือ "ชื่อช่อง ค่า" แบบเดียวกับที่พิมพ์เอง
-const CARD_COLON = /(^|\s)((?:ชื่อ)?(?:ผู้สั่ง|คนสั่ง|ลูกค้า)|ช่องทาง|ราคา|แบบ(?:โบว์)?|รายละเอียด(?:โบว์)?|วันที่|ค่าจ้าง(?:ทำ)?(?:โบว์)?)\s*[:：=]\s*/gu;
-const FIELD_ORDER = ['customer', 'channel', 'price', 'style', 'detail', 'order_date', 'wage'];
+const CARD_COLON = /(^|\s)((?:ชื่อ)?(?:ผู้สั่ง|คนสั่ง|ลูกค้า)|ช่องทาง|ราคา|แบบ(?:โบว์)?|รายละเอียด(?:โบว์)?|วันที่|ค่าจ้าง(?:ทำ)?(?:โบว์)?|ค่ามัดจำ|มัดจำ)\s*[:：=]\s*/gu;
+const FIELD_ORDER = ['customer', 'channel', 'price', 'style', 'detail', 'order_date', 'wage', 'deposit'];
 const FIELD_TH = {
   customer: 'ผู้สั่ง', channel: 'ช่องทาง', price: 'ราคา', style: 'แบบ',
-  detail: 'รายละเอียด', order_date: 'วันที่', wage: 'ค่าจ้าง',
+  detail: 'รายละเอียด', order_date: 'วันที่', wage: 'ค่าจ้าง', deposit: 'มัดจำ',
 };
-const FIELD_EG = { price: '2900', wage: '150', order_date: '12/11', channel: 'Line', customer: 'คุณเอ', style: 'ML', detail: 'แดงทอง' };
+const FIELD_EG = { price: '2900', wage: '150', deposit: '1000', order_date: '12/11', channel: 'Line', customer: 'คุณเอ', style: 'ML', detail: 'แดงทอง' };
 
 /** "ที่ 2" / "แบบที่2" -> "แบบที่ 2" — ให้ชื่อแบบสะกดเหมือนกันทุกแถว ไม่งั้นสรุปตามแบบจะแตกเป็นสองบรรทัด */
 export function styleName(value) {
@@ -156,8 +165,15 @@ export function parseOrderEdit(msg, today) {
   // รับรูปแบบการ์ดที่บอทตอบกลับมา — เจ้าของร้านคัดลอกการ์ดแล้วแก้ค่าส่งกลับ บรรทัดละช่อง มี : คั่น
   //   แบบ: แบบที่ 1 / รายละเอียด: ... / จ่ายแล้ว: (ว่าง) / ค่าจ้างทำ: 250
   // "จ่ายแล้ว:" ที่เว้นว่างหรือเป็น - คือยังไม่ติ๊ก ไม่ใช่สั่งเอาติ๊กออก
-  let cardPaid = null, cardWagePaid = null;
+  let cardPaid = null, cardWagePaid = null, shipped = null;
+  const shipTail = new RegExp(`(^|\\s)(${SNO}|${SYES})$`, 'u');
+  const takeShipTail = (text) => text.replace(shipTail, (_, sp, v) => { shipped = !/ยังไม่/.test(v); return sp; }).trim();
   rest = rest
+    .replace(/\(\s*คงเหลือ[^)]*\)/gu, '')   // "มัดจำ: 1,000.00 บาท (คงเหลือ 2,000.00)" — คงเหลือคิดเอง ไม่ต้องอ่าน
+    .replace(/(^|\s)ส่งแล้ว\s*[:：]\s*(✓|✔|ใช่|แล้ว|-|–|ยัง|ไม่)?(?=\s|$)/gu, (_, sp, v) => {
+      if (v && /✓|✔|ใช่|แล้ว/.test(v)) shipped = true;
+      return sp;
+    })
     .replace(/\(\s*จ่ายแล้ว\s*[✓✔]?\s*\)/gu, () => { cardWagePaid = true; return ''; })
     .replace(/(^|\s)จ่ายแล้ว\s*[:：]\s*(✓|✔|ใช่|แล้ว|-|–|ยัง|ไม่)?(?=\s|$)/gu, (_, sp, v) => {
       if (v && /✓|✔|ใช่|แล้ว/.test(v)) cardPaid = true;
@@ -165,6 +181,7 @@ export function parseOrderEdit(msg, today) {
     })
     .replace(CARD_COLON, '$1$2 ')
     .trim();
+  rest = takeShipTail(rest);
 
   // คำว่าจ่ายแล้วท้ายข้อความ — ติ๊กไปพร้อมกับการแก้ช่องอื่นได้
   let paid = null, wagePaid = null, tail = null;
@@ -173,9 +190,11 @@ export function parseOrderEdit(msg, today) {
     tail = t[1];
     rest = rest.slice(0, t.index).trim();
   }
+  rest = takeShipTail(rest);   // "... ส่งแล้ว จ่ายแล้ว" — ส่งแล้วอยู่ก่อนคำว่าจ่ายแล้วก็ได้
 
   const marks = [...rest.matchAll(FIELD_RE)];
-  if (!marks.length || marks[0].index !== 0) return null;   // ไม่ได้ขึ้นต้นด้วยชื่อช่อง — ไม่ใช่แพตเทิร์นนี้
+  // ไม่ได้ขึ้นต้นด้วยชื่อช่อง — ไม่ใช่แพตเทิร์นนี้ ยกเว้นข้อความที่มีแต่คำติ๊ก ("รายการ 6 ส่งแล้ว จ่ายแล้ว")
+  if (!marks.length ? (rest !== '' || (tail == null && shipped == null)) : marks[0].index !== 0) return null;
 
   const got = readOrderIds(m[2]);
   if (got.error) return got;
@@ -194,7 +213,7 @@ export function parseOrderEdit(msg, today) {
       && FIELD_ORDER[marks[i + 1].slice(2).findIndex((g) => g !== undefined)] === key) continue;
     if (!value) return { error: `ยังไม่ได้ใส่${FIELD_TH[key]}ครับ ${eg}` };
 
-    if (key === 'price' || key === 'wage') {
+    if (key === 'price' || key === 'wage' || key === 'deposit') {
       if (CLEAR.test(value)) set[key] = null;
       else {
         const n = value.match(/^([\d,]+(?:\.\d+)?)\s*(?:บาท|บ\.?)?$/u);
@@ -222,7 +241,7 @@ export function parseOrderEdit(msg, today) {
     if (/ค่าจ้าง/.test(tail) || lastKey === 'wage') wagePaid = yes;
     else paid = yes;
   }
-  return { ids: got.ids, set, paid: paid ?? cardPaid, wagePaid: wagePaid ?? cardWagePaid, revive };
+  return { ids: got.ids, set, paid: paid ?? cardPaid, wagePaid: wagePaid ?? cardWagePaid, shipped, revive };
 }
 
 /** "เดือน 10" / "เดือน 10/69" / "เดือนนี้" / "เดือนที่แล้ว" -> YYYY-MM; เดือนที่ยังมาไม่ถึงนับเป็นของปีก่อน */
@@ -267,6 +286,9 @@ export function parseOrderView(msg, today) {
   if (/^(?:ที่)?(?:ยัง)?ว่าง$|^ยังไม่มี(?:ผู้|คน)สั่ง$/u.test(q)) return { kind: 'list', ym, flag: 'free' };
   if (new RegExp(`^(?:ค้างค่าจ้าง|ค่าจ้างค้าง|${WNO})$`, 'u').test(q)) return { kind: 'list', ym, flag: 'wage_unpaid' };
   if (new RegExp(`^${WYES}$`, 'u').test(q)) return { kind: 'list', ym, flag: 'wage_paid' };
+  if (new RegExp(`^(?:ที่)?(?:${SNO}|ค้างส่ง)$`, 'u').test(q)) return { kind: 'list', ym, flag: 'unshipped' };
+  if (new RegExp(`^(?:ที่)?${SYES}$`, 'u').test(q)) return { kind: 'list', ym, flag: 'shipped' };
+  if (/^(?:ที่)?(?:มี)?(?:ค่า)?มัดจำ$/u.test(q)) return { kind: 'list', ym, flag: 'deposit' };
   if (new RegExp(`^(?:ที่)?(?:ลูกค้า)?(?:${NO}|ค้างจ่าย)$`, 'u').test(q)) return { kind: 'list', ym, flag: 'unpaid' };
   if (new RegExp(`^(?:ที่)?(?:ลูกค้า)?${YES}$`, 'u').test(q)) return { kind: 'list', ym, flag: 'paid' };
 
@@ -285,6 +307,9 @@ export function filterOrders(rows, view) {
   if (view.flag === 'free') return rows.filter((r) => !has(r.customer));
   if (view.flag === 'unpaid') return rows.filter((r) => has(r.customer) && !r.paid_at);
   if (view.flag === 'paid') return rows.filter((r) => r.paid_at);
+  if (view.flag === 'unshipped') return rows.filter((r) => has(r.customer) && !r.shipped_at);
+  if (view.flag === 'shipped') return rows.filter((r) => r.shipped_at);
+  if (view.flag === 'deposit') return rows.filter((r) => r.deposit != null && !r.paid_at);
   if (view.flag === 'wage_unpaid') return rows.filter((r) => !r.wage_paid_at);
   if (view.flag === 'wage_paid') return rows.filter((r) => r.wage_paid_at);
   const want = String(view.value).toLowerCase();
@@ -296,5 +321,6 @@ export function orderViewTitle(view) {
   return view.flag ? {
     free: 'ยังไม่มีผู้สั่ง', unpaid: 'ลูกค้ายังไม่จ่าย', paid: 'ลูกค้าจ่ายแล้ว',
     wage_unpaid: 'ยังไม่จ่ายค่าจ้าง', wage_paid: 'จ่ายค่าจ้างแล้ว',
+    unshipped: 'มีผู้สั่งแล้ว ยังไม่ส่ง', shipped: 'ส่งแล้ว', deposit: 'มัดจำแล้ว ยังจ่ายไม่ครบ',
   }[view.flag] : `${FIELD_TH[view.field]} ${view.value}`;
 }
