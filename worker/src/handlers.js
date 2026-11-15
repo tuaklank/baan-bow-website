@@ -25,7 +25,7 @@ import { push } from './line.js';
 import { summarizeOrders } from './order-sheet.js';
 import {
   ORDER_HELP, ORDER_MAX_PER_COMMAND, readOrderIds, orderIdList,
-  parseOrderEdit, parseOrderView, parseOrderVoid, filterOrders, orderViewTitle,
+  parseOrderEdit, parseOrderView, parseOrderVoid, filterOrders, orderViewTitle, styleName,
 } from './order-text.js';
 import {
   todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
@@ -1258,6 +1258,9 @@ async function applyOrderChanges(db, uid, ids, wantOf, { create = null } = {}) {
     // เจ้าของร้านมองเลขเป็นลำดับในสมุด "รายการ 6 ..." คือเขียนลงบรรทัดที่ 6 ไม่ว่าบรรทัดนั้นจะเคยถูกลบหรือไม่
     if (!row || isVoid) {
       if (!create) { bad.push(id); continue; }
+      // เลขใหม่ต้องต่อจากเลขสุดท้ายพอดี — พิมพ์ 60 แทน 6 จะได้ไม่เกิดช่องว่างกลางสมุด
+      // เช็กก่อนเรื่องแบบโบว์ ไม่งั้นจะไปบอกว่าเลข 60 "ว่างอยู่" ทั้งที่ยังไม่ถึงเลขนั้น
+      if (!row && id !== nextNew) { gap.push(id); continue; }
       const want = wantOf({ paid_at: null, wage_paid_at: null });
       if (!want.style) { needStyle.push(id); continue; }
       const fresh = { ...BLANK_ORDER, order_date: create.today, ...want };
@@ -1269,8 +1272,6 @@ async function applyOrderChanges(db, uid, ids, wantOf, { create = null } = {}) {
         });
         before.push(row);
       } else {
-        // เลขใหม่ต้องต่อจากเลขสุดท้ายพอดี — พิมพ์ 60 แทน 6 จะได้ไม่เกิดช่องว่างกลางสมุด
-        if (id !== nextNew) { gap.push(id); continue; }
         await addOrderAt(db, id, fresh);
         nextNew++;
         created.push(id);
@@ -1324,7 +1325,14 @@ export async function doOrderFields(env, msg, uid = null) {
   const cmd = parseOrderEdit(msg, today);
   if (!cmd) return null;
   if (cmd.error) return cmd.error;
+  return runOrderEdit(env, uid, cmd, today);
+}
 
+/**
+ * ลงคำสั่ง {ids, set, paid, wagePaid} — เลขที่มีอยู่ = แก้, เลขที่ว่าง = จดใหม่ลงเลขนั้น
+ * ใช้ร่วมกันทั้งทางแพตเทิร์นตายตัวและทางที่ AI อ่านมา ผลจะได้ไม่ต่างกันตามว่าข้อความไปทางไหน
+ */
+async function runOrderEdit(env, uid, cmd, today) {
   const res = await applyOrderChanges(env.DB, uid, cmd.ids, (row) => {
     const want = { ...cmd.set };
     if (cmd.paid != null && Boolean(row.paid_at) !== cmd.paid) want.paid_at = cmd.paid ? today : null;
@@ -1365,13 +1373,22 @@ export async function doEditOrder(env, cmd, uid = null) {
   const id = orderRef(cmd);
   if (!id) return 'ระบุเลขรายการด้วยครับ เช่น "รายการ 24 ราคา 3200"';
 
+  const o = cmd.order || {};
   const row = await orderById(db, id);
-  if (!row) return `ไม่พบรายการ #${id}`;
-  if (row.status === 'void') {
-    return `รายการ #${id} ถูกยกเลิกไปแล้ว แก้ไม่ได้ครับ\nถ้ายังต้องใช้ ให้จดใหม่ เช่น "สั่งโบว์ ${row.style} ..."`;
+  // เลขที่ว่าง (ถูกลบไปแล้ว หรือเลขถัดไปที่ยังไม่มี) — จดเป็นรายการใหม่ลงเลขนั้น เหมือนทางแพตเทิร์นตายตัว
+  // เคยตอบว่า "ถูกยกเลิกไปแล้ว แก้ไม่ได้" ทั้งที่เจ้าของร้านตั้งใจจดลงบรรทัดที่ 6 ที่ว่างอยู่
+  if (!row || row.status === 'void') {
+    const set = {};
+    if (o.style) set.style = styleName(o.style);
+    if (normalizeChannel(o.channel)) set.channel = normalizeChannel(o.channel);
+    if (o.detail) set.detail = o.detail;
+    if (o.customer) set.customer = o.customer;
+    if (o.price > 0) set.price = toSatang(o.price);
+    if (isValidYmd(o.order_date)) set.order_date = o.order_date;
+    if (o.wage > 0) set.wage = toSatang(o.wage);
+    return runOrderEdit(env, uid, { ids: [id], set, paid: readPaid(o.paid), wagePaid: readPaid(o.wage_paid) }, todayBkk());
   }
 
-  const o = cmd.order || {};
   const want = {
     style: o.style ?? undefined,
     channel: normalizeChannel(o.channel) ?? undefined,

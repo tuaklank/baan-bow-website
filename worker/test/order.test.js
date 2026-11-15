@@ -290,7 +290,7 @@ test('แก้เป็นค่าเดิม ไม่นับเป็น�
 
 test('แก้รายการที่ไม่มี หรือไม่บอกเลข — บอกให้รู้ ไม่เงียบ', async () => {
   const db = freshDb();
-  assert.ok((await doEditOrder(env(db), cmdOrder({ id: 99, price: 100 }))).includes('ไม่พบรายการ #99'));
+  assert.ok((await doEditOrder(env(db), cmdOrder({ id: 99, price: 100 }))).includes('ยังไม่มีรายการ #99'));
   assert.ok((await doEditOrder(env(db), cmdOrder({ price: 100 }))).includes('ระบุเลขรายการ'));
 });
 
@@ -308,8 +308,9 @@ test('ลบต้องยืนยันก่อน — ขอลบเฉย
   assert.equal(row.status, 'void');
   assert.equal(row.void_reason, 'ลูกค้าเปลี่ยนใจ');
 
-  // ลบแล้วแก้ต่อไม่ได้ และลบซ้ำก็บอกว่าลบไปแล้ว
-  assert.ok((await doEditOrder(env(db), cmdOrder({ id: 1, price: 1 }))).includes('ถูกยกเลิกไปแล้ว'));
+  // ลบแล้วเลขนั้นว่าง — แก้ราคาเฉยๆ ไม่ปลุกแถวกลับมา ต้องจดใหม่พร้อมแบบโบว์ และลบซ้ำก็บอกว่าลบไปแล้ว
+  assert.ok((await doEditOrder(env(db), cmdOrder({ id: 1, price: 1 }))).includes('ยังว่างอยู่'));
+  assert.equal((await orderById(db, 1)).status, 'void');
   assert.ok((await doVoidOrder(env(db), 'U1', cmdOrder({ id: 1 }))).includes('ถูกยกเลิกไปแล้ว'));
 });
 
@@ -788,4 +789,71 @@ test('ย้อนกลับเป็นของใครของมัน �
   assert.ok((await handleText(e, 'U2', 'เดินหน้า')).includes('ไม่มีอะไรให้เดินหน้า'));
   assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('จดรายการ #1 #2'));
   assert.equal((await monthOrders(db, monthBkk())).length, 0);
+});
+
+// ---------- ข้อความรูปแบบการ์ด (คัดลอกคำตอบของบอทแล้วแก้ค่าส่งกลับ) ----------
+
+const CARD_MSG = `สั่งโบว์ เพิ่ม
+
+รายการที่ 6
+แบบ: แบบที่ 1
+รายละเอียด: โบว์ML แดง/ทอง  ขอบชิด
+ช่องทาง: Line
+ผู้สั่ง: lek
+ราคา: 3,000
+จ่ายแล้ว:
+ค่าจ้างทำ: 250`;
+
+test('ข้อความจริง: การ์ดหลายบรรทัดลงรายการ 6 ที่ลบไว้ — ต้องจดได้ ไม่ตอบว่าถูกยกเลิก', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 3', qty: 6 }));
+  await handleText(e, 'U1', 'ลบรายการ 6');
+  await handleText(e, 'U1', 'ยืนยัน');
+
+  const a = await handleText(e, 'U1', CARD_MSG);
+  assert.ok(a.includes('จดรายการ #6 แล้ว'), a);
+  const r = await orderById(db, 6);
+  assert.deepEqual([r.status, r.style, r.detail, r.channel, r.customer, r.price, r.wage, r.paid_at, r.wage_paid_at],
+    ['recorded', 'แบบที่ 1', 'โบว์ML แดง/ทอง  ขอบชิด', 'Line', 'lek', 300000, 25000, null, null]);
+  assert.equal((await recentOrders(db, 100)).length, 6);
+});
+
+test('การ์ดหลายบรรทัดลงเลขถัดไป และการ์ดที่ติ๊กจ่ายมาด้วย', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }));
+
+  const a = await handleText(e, 'U1', 'รายการ 3\nแบบ: mini\nรายละเอียด: -\nช่องทาง: -\nผู้สั่ง: คุณเอ\nราคา: 475.00 บาท\nจ่ายแล้ว: ✓\nค่าจ้างทำ: 50.00 บาท (จ่ายแล้ว ✓)');
+  assert.ok(a.includes('จดรายการ #3 แล้ว'), a);
+  const r = await orderById(db, 3);
+  assert.deepEqual([r.style, r.detail, r.channel, r.customer, r.price, r.wage], ['mini', null, null, 'คุณเอ', 47500, 5000]);
+  assert.ok(r.paid_at && r.wage_paid_at);
+
+  // การ์ดของรายการที่มีอยู่แล้ว = แก้ และ "จ่ายแล้ว: -" ไม่เอาติ๊กเดิมออก
+  const b = await handleText(e, 'U1', 'รายการ 3\nราคา: 500\nจ่ายแล้ว: -');
+  assert.ok(b.includes('แก้รายการ #3 แล้ว'), b);
+  assert.equal((await orderById(db, 3)).price, 50000);
+  assert.ok((await orderById(db, 3)).paid_at);
+});
+
+test('ทางที่ AI อ่านมา: แก้เลขที่ว่างอยู่ = จดลงเลขนั้น ไม่ตอบว่าถูกยกเลิก', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 3', qty: 6, customer: 'เก่า' }));
+  await handleText(e, 'U1', 'ลบรายการ 6');
+  await handleText(e, 'U1', 'ยืนยัน');
+
+  const a = await doEditOrder(e, cmdOrder({ id: 6, style: 'แบบที่1', detail: 'แดง/ทอง', channel: 'ไลน์', price: 3000, wage: 250 }), 'U1');
+  assert.ok(a.includes('จดรายการ #6 แล้ว'), a);
+  const r = await orderById(db, 6);
+  assert.deepEqual([r.status, r.style, r.channel, r.customer, r.price, r.wage], ['recorded', 'แบบที่ 1', 'Line', null, 300000, 25000]);
+
+  const noStyle = await doEditOrder(e, cmdOrder({ id: 7, price: 3000 }), 'U1');
+  assert.ok(noStyle.includes('ยังว่างอยู่') && noStyle.includes('แบบโบว์'), noStyle);
+  const far = await doEditOrder(e, cmdOrder({ id: 40, style: 'ML' }), 'U1');
+  assert.ok(far.includes('เลขถัดไปคือ 7'), far);
+
+  await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.equal((await orderById(db, 6)).status, 'void', 'ย้อนกลับแล้วเลข 6 ต้องกลับไปว่าง');
 });
