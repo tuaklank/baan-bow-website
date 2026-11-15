@@ -590,6 +590,7 @@ export async function productsByKeys(db, keys) {
 // ---------- ออเดอร์โบว์: แก้ทีละหลายชิ้น ----------
 // "ออเดอร์ 1-30 ค่าจ้าง 150" แตะสามสิบแถวในข้อความเดียว ถ้าวนอ่าน-แก้-จดประวัติทีละแถว
 // จะชนเพดานจำนวนคำสั่งฐานข้อมูลต่อหนึ่งข้อความของ Cloudflare จึงรวมเป็นไม่กี่คำสั่ง
+const ORDER_STATE = [...ORDER_FIELDS, 'status', 'void_reason', 'voided_at'];   // ทุกช่องที่คำสั่งหนึ่งเปลี่ยนได้
 const ORDER_CHUNK = 40;   // D1 รับตัวแปรได้ 100 ตัวต่อคำสั่ง — ประวัติใช้ 2 ตัวต่อแถว
 const chunksOf = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
 
@@ -610,10 +611,12 @@ export async function ordersByIds(db, ids) {
  * แถวที่แก้เหมือนกันรวมเป็น UPDATE เดียว (ปกติทั้งชุดแก้เหมือนกันหมด จึงเหลือคำสั่งเดียว)
  * แก้เฉพาะแถวที่ยังไม่ถูกยกเลิก เหมือน updateOrder
  */
-export async function updateOrdersBulk(db, items) {
+export async function updateOrdersBulk(db, items, { anyStatus = false } = {}) {
+  // anyStatus = เขียนสถานะได้ด้วย (ลบ / กู้คืน / ย้อนกลับ) — ปกติแก้ได้เฉพาะช่องข้อมูลของแถวที่ยังไม่ถูกลบ
+  const fields = anyStatus ? ORDER_STATE : ORDER_FIELDS;
   const groups = new Map();
   for (const it of items) {
-    const keys = ORDER_FIELDS.filter((k) => it.changes[k] !== undefined);
+    const keys = fields.filter((k) => it.changes[k] !== undefined);
     if (!keys.length) continue;
     const sig = JSON.stringify(keys.map((k) => [k, it.changes[k]]));
     if (!groups.has(sig)) groups.set(sig, { keys, changes: it.changes, rows: [] });
@@ -623,11 +626,31 @@ export async function updateOrdersBulk(db, items) {
     for (const part of chunksOf(g.rows, ORDER_CHUNK)) {
       await db.prepare(`
         UPDATE bow_orders SET ${g.keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now')
-        WHERE status = 'recorded' AND id IN (${part.map(() => '?').join(',')})
+        WHERE ${anyStatus ? '' : "status = 'recorded' AND "}id IN (${part.map(() => '?').join(',')})
       `).bind(...g.keys.map((k) => g.changes[k]), ...part.map((r) => r.id)).run();
       await db.prepare(
         `INSERT INTO bow_order_events (order_id, text) VALUES ${part.map(() => '(?, ?)').join(', ')}`,
       ).bind(...part.flatMap((r) => [r.id, r.text || 'แก้ไข'])).run();
     }
   }
+}
+
+// ---------- ออเดอร์โบว์: ย้อนกลับ ----------
+// เก็บสภาพก่อนคำสั่งออเดอร์ล่าสุดของผู้ใช้ไว้ชุดเดียว พิมพ์ "ย้อนกลับ" แล้วคืนสภาพนั้น
+// ชุดเดียวพอ เพราะตั้งใจให้ย้อนได้ครั้งเดียว — ย้อนหลายชั้นแล้วเจ้าของร้านจะตามไม่ทันว่าตอนนี้อยู่ตรงไหน
+// payload = { created: [เลขที่คำสั่งนั้นจดขึ้นมาใหม่], before: [แถวเดิมทั้งแถวก่อนถูกแก้/ลบ] }
+
+export async function saveOrderUndo(db, uid, label, payload) {
+  await db.prepare(`
+    INSERT INTO order_undo (user_id, label, payload, created_at) VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT (user_id) DO UPDATE SET label = excluded.label, payload = excluded.payload, created_at = excluded.created_at
+  `).bind(uid, label, JSON.stringify(payload)).run();
+}
+
+/** หยิบชุดย้อนกลับออกมาแล้วลบทิ้ง — ย้อนได้ครั้งเดียว; ไม่มีคืน null */
+export async function takeOrderUndo(db, uid) {
+  const row = await db.prepare('SELECT label, payload FROM order_undo WHERE user_id = ?').bind(uid).first();
+  if (!row) return null;
+  await db.prepare('DELETE FROM order_undo WHERE user_id = ?').bind(uid).run();
+  return { label: row.label, ...JSON.parse(row.payload) };
 }

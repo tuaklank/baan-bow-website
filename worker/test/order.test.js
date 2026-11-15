@@ -581,3 +581,124 @@ test('คู่มือคำสั่งออเดอร์เรียก�
     assert.ok(out, 'ตัวอย่างในคู่มืออ่านไม่ออก: ' + l);
   }
 });
+
+// ---------- ลบหลายออเดอร์ / กู้เลขเดิม / ย้อนกลับ ----------
+// ที่มา: เจ้าของร้านพิมพ์ "สั่งใหม่ ออเดอร์ 7 ..." ตั้งใจจะใช้เลข 7 ที่ลบไป
+// แต่เลข 7 ถูกอ่านเป็นจำนวนชิ้น ได้แถวใหม่มาเป็นสิบ และไม่มีทางถอย
+
+const REAL_MSG = 'สั่งใหม่ ออเดอร์ 7 แบบโบว์ แบบที่2 รายละเอียดโบว์ MLผ้าต่วนทอง/ดำ ขอบขยับ ช่องทาง Line ราคา3,000  ค่าจ้างทำ300';
+
+test('ลบทีละหลายออเดอร์: ถามยืนยันก่อน แล้วหายจากตารางทั้งชุด', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 1', qty: 6 }));
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 2', qty: 4 }));
+
+  const ask = await handleText(e, 'U1', 'ลบออเดอร์ 3-8');
+  assert.ok(ask.includes('จะลบ 6 ออเดอร์: #3–#8'));
+  assert.ok(ask.includes('แบบที่ 1 ×4') && ask.includes('แบบที่ 2 ×2'));
+  assert.equal((await monthOrders(db, monthBkk())).length, 10, 'ยังไม่ยืนยันต้องยังไม่ลบ');
+
+  const done = await handleText(e, 'U1', 'ยืนยัน');
+  assert.ok(done.includes('ลบออเดอร์ #3–#8 แล้ว (6 ชิ้น)'));
+  assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2, 9, 10]);
+  assert.equal((await orderById(db, 5)).status, 'void', 'ลบ = ยกเลิก แถวต้องยังอยู่');
+
+  const again = await handleText(e, 'U1', 'ลบออเดอร์ 2 5 99');
+  assert.ok(again.includes('จะลบ 1 ออเดอร์: #2') && again.includes('ข้าม #5 #99'));
+});
+
+test('ข้อความจริงที่เคยพัง: "สั่งใหม่ ออเดอร์ 7 ..." ต้องกู้เลข 7 กลับมา ไม่จดแถวใหม่', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 3', qty: 8 }));
+  await handleText(e, 'U1', 'ลบออเดอร์ 6-8');
+  await handleText(e, 'U1', 'ยืนยัน');
+
+  const a = await handleText(e, 'U1', REAL_MSG);
+  assert.ok(a.includes('กู้คืนและแก้ออเดอร์ #7 แล้ว'), a);
+  const r = await orderById(db, 7);
+  assert.deepEqual([r.status, r.style, r.detail, r.channel, r.price, r.wage],
+    ['recorded', 'แบบที่ 2', 'MLผ้าต่วนทอง/ดำ ขอบขยับ', 'Line', 300000, 30000]);
+  const all = await recentOrders(db, 100);
+  assert.equal(all.length, 8, 'ต้องไม่มีแถวใหม่งอกขึ้นมา');
+  assert.equal((await orderById(db, 6)).status, 'void', 'เลขอื่นที่ลบไว้ต้องไม่ถูกแตะ');
+});
+
+test('สั่งใหม่กับเลขที่ยังไม่เคยมี: ไม่จดอะไร และบอกวิธีจดชิ้นใหม่', async () => {
+  const db = freshDb();
+  const a = await handleText(env(db), 'U1', 'สั่งใหม่ ออเดอร์ 30 แบบ ML ราคา 3000');
+  assert.ok(a.includes('ไม่พบหรือถูกลบแล้ว: #30') && a.includes('สั่งโบว์'));
+  assert.equal((await recentOrders(db, 100)).length, 0);
+});
+
+test('แก้ออเดอร์ที่ถูกลบแบบธรรมดา (ไม่มีคำว่าสั่งใหม่) ไม่ปลุกแถวกลับมาเอง', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML' }));
+  await handleText(e, 'U1', 'ลบออเดอร์ 1');
+  await handleText(e, 'U1', 'ยืนยัน');
+  const a = await handleText(e, 'U1', 'ออเดอร์ 1 ราคา 3000');
+  assert.ok(a.includes('ไม่พบหรือถูกลบแล้ว: #1'));
+  assert.equal((await orderById(db, 1)).status, 'void');
+});
+
+test('ย้อนกลับ: จดผิดหลายชิ้น -> แถวที่จดมาหายจากตาราง', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }), 'U1');
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 1', qty: 15 }), 'U1');   // อันที่จดผิด
+  assert.equal((await monthOrders(db, monthBkk())).length, 17);
+
+  const a = await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.ok(a.includes('ย้อนกลับแล้ว: จดออเดอร์ #3–#17 (15 ชิ้น)'), a);
+  assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2]);
+
+  // ย้อนได้ครั้งเดียว — ครั้งที่สองต้องไม่ไปลบของที่จดถูกไว้ก่อนหน้า
+  const b = await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.ok(b.includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับ'));
+  assert.equal((await monthOrders(db, monthBkk())).length, 2);
+});
+
+test('ย้อนกลับ: แก้ผิด -> ทุกช่องกลับเป็นค่าเดิม รวมติ๊กจ่าย', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3 }));
+  await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900');
+  await handleText(e, 'U1', 'ออเดอร์ 1-3 ผู้สั่ง คุณผิด ราคา 99 จ่ายแล้ว');   // แก้ผิดทั้งสามชิ้น
+
+  const a = await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.ok(a.includes('ย้อนกลับแล้ว: แก้ออเดอร์ #1–#3'));
+  const rows = await monthOrders(db, monthBkk());
+  assert.deepEqual(rows.map((r) => [r.customer, r.price, r.paid_at]),
+    [['คุณเอ', 290000, null], [null, null, null], [null, null, null]]);
+});
+
+test('ย้อนกลับ: ติ๊กจ่ายผิด และลบผิด ก็คืนได้', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 4 }));
+
+  await handleText(e, 'U1', 'ออเดอร์ 1-4 จ่ายค่าจ้างแล้ว');
+  await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.ok((await monthOrders(db, monthBkk())).every((r) => r.wage_paid_at == null));
+
+  await handleText(e, 'U1', 'ลบออเดอร์ 2-4');
+  await handleText(e, 'U1', 'ยืนยัน');
+  assert.equal((await monthOrders(db, monthBkk())).length, 1);
+  const a = await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.ok(a.includes('ย้อนกลับแล้ว: ลบออเดอร์ #2–#4'));
+  assert.equal((await monthOrders(db, monthBkk())).length, 4);
+  assert.equal((await orderById(db, 3)).void_reason, null);
+});
+
+test('ย้อนกลับเป็นของใครของมัน และคำสั่งดูอย่างเดียวไม่ทับชุดย้อนกลับ', async () => {
+  const db = freshDb();
+  const e = { ...env(db), ALLOWED_USER_IDS: 'U1,U2' };
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }), 'U1');
+  await handleText(e, 'U1', 'ตารางออเดอร์');
+  await handleText(e, 'U1', 'ออเดอร์ ว่าง');
+  assert.ok((await handleText(e, 'U2', 'ย้อนกลับ')).includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับ'));
+  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('จดออเดอร์ #1 #2'));
+  assert.equal((await monthOrders(db, monthBkk())).length, 0);
+});

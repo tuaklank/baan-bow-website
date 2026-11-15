@@ -29,6 +29,7 @@ export const ORDER_HELP = `📌 วิธีสั่งออเดอร์โ
 • ออเดอร์ 1-10 ค่าจ้าง 150
 ลบค่าในช่อง ใส่ -
 • ออเดอร์ 3 ผู้สั่ง -
+เลขหลังคำว่า "ออเดอร์" คือเลขออเดอร์เสมอ ไม่ใช่จำนวนชิ้น
 
 ✅ ติ๊กจ่าย
 • ออเดอร์ 3 จ่ายแล้ว            (ลูกค้าจ่าย)
@@ -48,8 +49,15 @@ export const ORDER_HELP = `📌 วิธีสั่งออเดอร์โ
 • ออเดอร์ ช่องทาง Line
 ต่อท้าย "เดือน 10" ได้ทุกคำสั่งเรียกดู
 
-🗑 ลบ
-• ลบออเดอร์ 3                  (ต้องพิมพ์ "ยืนยัน")`;
+🗑 ลบ (ต้องพิมพ์ "ยืนยัน")
+• ลบออเดอร์ 3
+• ลบออเดอร์ 9-23
+• ลบออเดอร์ 2 5 8
+เอาเลขที่ลบไปกลับมาใช้:
+• สั่งใหม่ ออเดอร์ 7 แบบ ML ราคา 3000
+
+↩️ ย้อนกลับ
+• ย้อนกลับ                     (ยกเลิกคำสั่งออเดอร์ล่าสุด 1 ครั้ง ทั้งจด แก้ และลบ)`;
 
 const YES = '(?:จ่ายแล้ว|จ่ายเงินแล้ว|โอนแล้ว|ชำระแล้ว)';
 const NO = '(?:ยังไม่จ่าย|ยังไม่ได้จ่าย|ยังไม่โอน)';
@@ -93,11 +101,11 @@ export function orderIdList(ids) {
 // "แบบ" ตามด้วย "ที่" ได้ เพราะชื่อแบบมักเป็น "แบบที่ 2"
 const FIELD_RE = new RegExp(
   '(^|\\s)(?:'
-  + '(ผู้สั่ง|คนสั่ง|ลูกค้า)(?=\\s|$)'
+  + '((?:ชื่อ)?(?:ผู้สั่ง|คนสั่ง|ลูกค้า))(?=\\s|$)'
   + '|(ช่องทาง(?=\\s|$)|ทาง(?=\\s*(?:ไลน์|line|เฟส|fb|facebook|เพจ|หน้าร้าน|shop|ช้อป|ช็อป|ไลฟ์|live)))'
   + '|(ราคา)(?=\\s|\\d|-|$)'
-  + '|(แบบ)(?=\\s|\\d|ที่|$)'
-  + '|(รายละเอียด)(?=\\s|$)'
+  + '|(แบบ(?:โบว์)?)(?=\\s|\\d|ที่|$)'
+  + '|(รายละเอียด(?:โบว์)?)(?=\\s|$)'
   + '|(วันที่)(?=\\s|\\d|$)'
   + '|(ค่าจ้าง(?:ทำ)?(?:โบว์)?(?:ชิ้นละ)?)(?=\\s|\\d|-|$)'
   + ')', 'giu');
@@ -108,6 +116,24 @@ const FIELD_TH = {
 };
 const FIELD_EG = { price: '2900', wage: '150', order_date: '12/11', channel: 'Line', customer: 'คุณเอ', style: 'ML', detail: 'แดงทอง' };
 
+/** "ที่ 2" / "แบบที่2" -> "แบบที่ 2" — ให้ชื่อแบบสะกดเหมือนกันทุกแถว ไม่งั้นสรุปตามแบบจะแตกเป็นสองบรรทัด */
+export function styleName(value) {
+  const v = String(value).trim();
+  const n = v.match(/^(?:แบบ)?ที่\s*(\d+)$/u);
+  return n ? `แบบที่ ${n[1]}` : v;
+}
+
+/** "ลบออเดอร์ 9-23" / "ยกเลิกออเดอร์ 9 10 เหตุผล" -> {ids, reason} หรือ {error}; ไม่ใช่คำสั่งลบคืน null */
+export function parseOrderVoid(msg) {
+  const m = String(msg).trim().replace(POLITE, '')
+    .match(/^(?:ลบ|ยกเลิก)\s*ออเดอร์(?:ที่)?\s*#?\s*(\d[\d\s,#\-–]*?)(?:\s+([^\d\s,#\-–].*))?$/su);
+  if (!m) return null;
+  const got = readOrderIds(m[1]);
+  if (got.error) return got;
+  if (!got.ids.length) return null;
+  return { ids: got.ids, reason: m[2]?.trim() || null };
+}
+
 /**
  * อ่านคำสั่งแก้ไข "ออเดอร์ <เลข> <ชื่อช่อง> <ค่า> [<ชื่อช่อง> <ค่า> ...] [จ่ายแล้ว]"
  * คืน null ถ้าไม่ใช่รูปแบบนี้ (ให้ AI อ่านต่อ), {error} ถ้าใช่แต่ค่าผิด,
@@ -115,9 +141,12 @@ const FIELD_EG = { price: '2900', wage: '150', order_date: '12/11', channel: 'Li
  */
 export function parseOrderEdit(msg, today) {
   const m = String(msg).trim().replace(POLITE, '')
-    .match(/^(?:แก้)?ออเดอร์\s*#?\s*([\d\s,#\-–]+?)\s*([^\d\s,#\-–].*)$/su);
+    .match(/^(สั่งใหม่|กู้คืน|กู้|คืน|แก้ไข|แก้|เปลี่ยน)?\s*ออเดอร์(?:ที่)?\s*#?\s*([\d\s,#\-–]+?)\s*([^\d\s,#\-–].*)$/su);
   if (!m) return null;
-  let rest = m[2].trim();
+  // "สั่งใหม่ ออเดอร์ 7 ..." = เอาเลข 7 ที่ลบไปแล้วกลับมาใช้ ไม่ใช่จดเพิ่ม 7 ชิ้น
+  // (เคยถูกอ่านเป็นจำนวนชิ้นแล้วได้แถวใหม่มาเป็นสิบ) — เลขหลังคำว่าออเดอร์คือเลขออเดอร์เสมอ
+  const revive = /^(สั่งใหม่|กู้คืน|กู้|คืน)$/.test(m[1] ?? '');
+  let rest = m[3].trim();
 
   // คำว่าจ่ายแล้วท้ายข้อความ — ติ๊กไปพร้อมกับการแก้ช่องอื่นได้
   let paid = null, wagePaid = null, tail = null;
@@ -130,7 +159,7 @@ export function parseOrderEdit(msg, today) {
   const marks = [...rest.matchAll(FIELD_RE)];
   if (!marks.length || marks[0].index !== 0) return null;   // ไม่ได้ขึ้นต้นด้วยชื่อช่อง — ไม่ใช่แพตเทิร์นนี้
 
-  const got = readOrderIds(m[1]);
+  const got = readOrderIds(m[2]);
   if (got.error) return got;
   if (!got.ids.length) return null;
 
@@ -142,6 +171,9 @@ export function parseOrderEdit(msg, today) {
     const start = mk.index + mk[0].length;
     const value = rest.slice(start, i + 1 < marks.length ? marks[i + 1].index : undefined).trim();
     const eg = `เช่น "ออเดอร์ ${got.ids[0]} ${FIELD_TH[key]} ${FIELD_EG[key]}"`;
+    // "แบบโบว์ แบบที่ 2" — ชื่อช่องตามด้วยค่าที่ขึ้นต้นด้วยคำเดียวกัน ให้ข้ามตัวแรกไป
+    if (!value && i + 1 < marks.length
+      && FIELD_ORDER[marks[i + 1].slice(2).findIndex((g) => g !== undefined)] === key) continue;
     if (!value) return { error: `ยังไม่ได้ใส่${FIELD_TH[key]}ครับ ${eg}` };
 
     if (key === 'price' || key === 'wage') {
@@ -157,7 +189,7 @@ export function parseOrderEdit(msg, today) {
       set[key] = d;
     } else if (key === 'style') {
       if (CLEAR.test(value)) return { error: `แบบโบว์เว้นว่างไม่ได้ครับ ถ้าไม่ใช้แล้วให้พิมพ์ "ลบออเดอร์ ${got.ids[0]}"` };
-      set[key] = value.startsWith('ที่') ? 'แบบ' + value : value;   // "แบบที่ 2" พิมพ์มาเป็น "แบบ" + "ที่ 2"
+      set[key] = styleName(value);
     } else if (key === 'channel') {
       set[key] = CLEAR.test(value) ? null : normalizeChannel(value);
     } else {
@@ -172,7 +204,7 @@ export function parseOrderEdit(msg, today) {
     if (/ค่าจ้าง/.test(tail) || lastKey === 'wage') wagePaid = yes;
     else paid = yes;
   }
-  return { ids: got.ids, set, paid, wagePaid };
+  return { ids: got.ids, set, paid, wagePaid, revive };
 }
 
 /** "เดือน 10" / "เดือน 10/69" / "เดือนนี้" / "เดือนที่แล้ว" -> YYYY-MM; เดือนที่ยังมาไม่ถึงนับเป็นของปีก่อน */
@@ -224,7 +256,7 @@ export function parseOrderView(msg, today) {
   if (!f) return null;
   const field = f[1] === 'แบบ' ? 'style' : f[1] === 'ช่องทาง' ? 'channel' : 'customer';
   let value = f[2].trim();
-  if (field === 'style' && value.startsWith('ที่')) value = 'แบบ' + value;
+  if (field === 'style') value = styleName(value);
   if (field === 'channel') value = normalizeChannel(value);
   return { kind: 'list', ym, field, value };
 }
