@@ -63,7 +63,7 @@ details.nums th,details.nums td{padding:4px 0;text-align:right;border-bottom:1px
 details.nums th:first-child,details.nums td:first-child{text-align:left}
 details.nums th{font-weight:500;color:var(--mute)}
 details.nums td{font-variant-numeric:tabular-nums}
-/* ตารางออเดอร์ — หกช่องไม่พอดีจอมือถือ จึงให้เลื่อนซ้ายขวาได้ในกรอบของตัวเอง ไม่ดันทั้งหน้า */
+/* ตารางรายการ — หกช่องไม่พอดีจอมือถือ จึงให้เลื่อนซ้ายขวาได้ในกรอบของตัวเอง ไม่ดันทั้งหน้า */
 .otable{background:#fff;border:1px solid var(--line);border-radius:12px;overflow-x:auto;margin-bottom:12px}
 .otable table{width:100%;min-width:760px;border-collapse:collapse;font-size:13px}
 .otable .paid{text-align:center;color:#15803D;font-weight:700}
@@ -78,7 +78,7 @@ ${CHART_CSS}`;
 
 export const TABS = ['jobs', 'orders', 'docs', 'stock', 'expenses', 'leads', 'summary'];
 const TAB_LABEL = {
-  jobs: 'งาน', orders: 'ออเดอร์', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', leads: 'มุ่งหวัง', summary: 'สรุป',
+  jobs: 'งาน', orders: 'รายการ', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', leads: 'มุ่งหวัง', summary: 'สรุป',
 };
 
 const statusClass = (s) => (s === 'กำลังทำ' ? 'doing' : s === 'รอลูกค้า' ? 'waiting' : '');
@@ -191,12 +191,12 @@ ${rows.map(stockCard).join('\n')}`;
 }
 
 /**
- * ตารางออเดอร์โบว์ — หัวเป็นยอดของเดือนนี้ ตารางข้างล่างเป็นรายการล่าสุดย้อนหลังไม่จำกัดเดือน
+ * ตารางรายการโบว์ — หัวเป็นยอดของเดือนนี้ ตารางข้างล่างเป็นรายการล่าสุดย้อนหลังไม่จำกัดเดือน
  * ที่ยกเลิกแล้วยังโชว์แบบขีดฆ่า ให้เห็นว่าเคยจดอะไรไว้ (หลักเดียวกับรายจ่าย)
  */
 function ordersView(rows, month) {
   if (!rows.length) {
-    return '<p class="empty">ยังไม่มีออเดอร์<br>สั่ง "สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900" ทางไลน์ได้เลย</p>';
+    return '<p class="empty">ยังไม่มีรายการ<br>สั่ง "สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900" ทางไลน์ได้เลย</p>';
   }
   // ตัวเลขชุดเดียวกับหน้า A4 และคำตอบในไลน์ (summarizeOrders) จะได้ไม่มีสามที่สามยอด
   const s = summarizeOrders(month);
@@ -204,7 +204,7 @@ function ordersView(rows, month) {
   const v = (x) => (x == null ? '' : esc(x));
   const m = (x) => (x != null ? fmtBaht(x) : '');
   return `<div class="sum">
-  <h2>ออเดอร์เดือนนี้</h2>
+  <h2>รายการเดือนนี้</h2>
   <div class="line"><span>จำนวน</span><b>${s.count} ชิ้น</b></div>
   <div class="line"><span>ยังไม่มีผู้สั่ง</span><b>${s.free} ชิ้น</b></div>
   ${s.noPrice ? `<div class="line"><span>ยังไม่ใส่ราคา</span><b>${s.noPrice} ชิ้น</b></div>` : ''}

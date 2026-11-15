@@ -65,7 +65,7 @@ async function handleDoc(url, env) {
   const row = await docByToken(env.DB, token);
   if (row) return html(renderDoc(row));
 
-  // ไม่ใช่เอกสาร อาจเป็นหน้าตารางออเดอร์ของเดือน — ใช้ /d/ เดียวกันเพราะ route ผูกไว้แล้ว
+  // ไม่ใช่เอกสาร อาจเป็นหน้าตารางรายการของเดือน — ใช้ /d/ เดียวกันเพราะ route ผูกไว้แล้ว
   // และ token ทั้งสองแบบสุ่มจากที่เดียวกัน ชนกันไม่ได้ในทางปฏิบัติ
   const sheet = await orderSheetByToken(env.DB, token);
   if (!sheet) return html('<p>ไม่พบเอกสาร</p>', 404);

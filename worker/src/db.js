@@ -376,7 +376,7 @@ export async function jobExpenses(db, jobId) {
   return results;
 }
 
-// ---------- ออเดอร์โบว์ ----------
+// ---------- รายการโบว์ ----------
 const ORDER_FIELDS = ['order_date', 'style', 'channel', 'detail', 'customer', 'price', 'paid_at', 'wage', 'wage_paid_at'];
 
 export async function addOrder(db, o) {
@@ -402,12 +402,33 @@ export async function addOrders(db, o, qty) {
   return { first: last - qty + 1, last };
 }
 
+/** แถวที่ถูกลบไปแล้ว เรียงจากเลขน้อย — เลขพวกนี้ว่างอยู่ จดรายการใหม่ให้เอามาใช้ก่อนออกเลขใหม่ */
+export async function voidOrderRows(db, limit) {
+  const { results } = await db.prepare("SELECT * FROM bow_orders WHERE status = 'void' ORDER BY id LIMIT ?").bind(limit).all();
+  return results;
+}
+
+/** เลขมากสุดที่เคยมี (รวมที่ลบแล้ว) — เลขถัดไปที่จดต่อท้ายได้คือค่านี้ + 1 */
+export async function maxOrderId(db) {
+  const row = await db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM bow_orders').first();
+  return row.n;
+}
+
+/** จดลงเลขที่ระบุ ใช้เมื่อเจ้าของร้านพิมพ์เลขถัดไปมาเอง ("รายการ 7 แบบ ML") — ผู้เรียกต้องเช็กว่าเลขนั้นยังไม่มี */
+export async function addOrderAt(db, id, o) {
+  await db.prepare(`
+    INSERT INTO bow_orders (id, order_date, style, channel, detail, customer, price, paid_at, wage, wage_paid_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null,
+    o.paid_at ?? null, o.wage ?? null, o.wage_paid_at ?? null).run();
+}
+
 export const orderById = (db, id) =>
   db.prepare('SELECT * FROM bow_orders WHERE id = ?').bind(id).first();
 
 /**
- * แก้ออเดอร์ทับแถวเดิม — ต่างจากรายจ่ายที่ยกเลิกแล้วลงใหม่ เพราะเลขออเดอร์ต้องคงเดิม
- * เจ้าของร้านอ้าง "ออเดอร์ 24" ซ้ำหลายรอบเพื่อเติมทีละช่อง ถ้าเลขเปลี่ยนทุกครั้งจะตามไม่ได้
+ * แก้รายการทับแถวเดิม — ต่างจากรายจ่ายที่ยกเลิกแล้วลงใหม่ เพราะเลขรายการต้องคงเดิม
+ * เจ้าของร้านอ้าง "รายการ 24" ซ้ำหลายรอบเพื่อเติมทีละช่อง ถ้าเลขเปลี่ยนทุกครั้งจะตามไม่ได้
  * ประวัติว่าเคยเป็นอะไรมาก่อนเก็บใน bow_order_events แทน
  * changes ใส่เฉพาะช่องที่จะแก้ ช่องที่ไม่ใส่คงค่าเดิม; คืน null ถ้าไม่มีแถวหรือถูกยกเลิกแล้ว
  */
@@ -424,7 +445,7 @@ export async function updateOrder(db, id, changes, eventText) {
   return orderById(db, id);
 }
 
-/** ลบออเดอร์ = ยกเลิก ไม่ลบแถว เหมือนทุกตารางในระบบ; คืน false ถ้ายกเลิกไปแล้ว */
+/** ลบรายการ = ยกเลิก ไม่ลบแถว เหมือนทุกตารางในระบบ; คืน false ถ้ายกเลิกไปแล้ว */
 export async function voidOrder(db, id, reason) {
   const res = await db.prepare(`
     UPDATE bow_orders SET status = 'void', void_reason = ?, voided_at = datetime('now'),
@@ -445,7 +466,7 @@ export async function orderEvents(db, id) {
   return results;
 }
 
-/** ออเดอร์ของเดือน (YYYY-MM) เรียงตามวันที่แล้วตามเลข — ที่ยกเลิกแล้วไม่รวม */
+/** รายการของเดือน (YYYY-MM) เรียงตามวันที่แล้วตามเลข — ที่ยกเลิกแล้วไม่รวม */
 export async function monthOrders(db, ym) {
   const { results } = await db.prepare(`
     SELECT * FROM bow_orders WHERE status = 'recorded' AND order_date LIKE ?
@@ -463,8 +484,8 @@ export async function recentOrders(db, limit = 50) {
 }
 
 /**
- * token ของหน้าตารางออเดอร์เดือนนั้น — มีอยู่แล้วใช้ตัวเดิม ไม่มีสร้างใหม่
- * ลิงก์ของเดือนเดียวกันจึงเหมือนเดิมทุกครั้ง เปิดค้างไว้แล้วกดรีเฟรชก็เห็นออเดอร์ล่าสุด
+ * token ของหน้าตารางรายการเดือนนั้น — มีอยู่แล้วใช้ตัวเดิม ไม่มีสร้างใหม่
+ * ลิงก์ของเดือนเดียวกันจึงเหมือนเดิมทุกครั้ง เปิดค้างไว้แล้วกดรีเฟรชก็เห็นรายการล่าสุด
  */
 export async function orderSheetToken(db, ym) {
   await db.prepare('INSERT OR IGNORE INTO order_sheets (ym, token) VALUES (?, ?)')
@@ -587,14 +608,14 @@ export async function productsByKeys(db, keys) {
   return results;
 }
 
-// ---------- ออเดอร์โบว์: แก้ทีละหลายชิ้น ----------
-// "ออเดอร์ 1-30 ค่าจ้าง 150" แตะสามสิบแถวในข้อความเดียว ถ้าวนอ่าน-แก้-จดประวัติทีละแถว
+// ---------- รายการโบว์: แก้ทีละหลายชิ้น ----------
+// "รายการ 1-30 ค่าจ้าง 150" แตะสามสิบแถวในข้อความเดียว ถ้าวนอ่าน-แก้-จดประวัติทีละแถว
 // จะชนเพดานจำนวนคำสั่งฐานข้อมูลต่อหนึ่งข้อความของ Cloudflare จึงรวมเป็นไม่กี่คำสั่ง
 const ORDER_STATE = [...ORDER_FIELDS, 'status', 'void_reason', 'voided_at'];   // ทุกช่องที่คำสั่งหนึ่งเปลี่ยนได้
 const ORDER_CHUNK = 40;   // D1 รับตัวแปรได้ 100 ตัวต่อคำสั่ง — ประวัติใช้ 2 ตัวต่อแถว
 const chunksOf = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
 
-/** อ่านหลายออเดอร์ในคำสั่งเดียว (รวมที่ยกเลิกแล้ว ให้ผู้เรียกแยกเอง) */
+/** อ่านหลายรายการในคำสั่งเดียว (รวมที่ยกเลิกแล้ว ให้ผู้เรียกแยกเอง) */
 export async function ordersByIds(db, ids) {
   const out = [];
   for (const part of chunksOf(ids, 90)) {
@@ -607,7 +628,7 @@ export async function ordersByIds(db, ids) {
 }
 
 /**
- * แก้หลายออเดอร์พร้อมกัน — items = [{id, changes, text}] โดย text คือบรรทัดประวัติของแถวนั้น
+ * แก้หลายรายการพร้อมกัน — items = [{id, changes, text}] โดย text คือบรรทัดประวัติของแถวนั้น
  * แถวที่แก้เหมือนกันรวมเป็น UPDATE เดียว (ปกติทั้งชุดแก้เหมือนกันหมด จึงเหลือคำสั่งเดียว)
  * แก้เฉพาะแถวที่ยังไม่ถูกยกเลิก เหมือน updateOrder
  */
@@ -635,13 +656,13 @@ export async function updateOrdersBulk(db, items, { anyStatus = false } = {}) {
   }
 }
 
-// ---------- ออเดอร์โบว์: ย้อนกลับ / เดินหน้า ----------
-// เก็บคำสั่งออเดอร์ของผู้ใช้เรียงกันเป็นแถว (ดู migration 0007) ย้อนได้ทีละคำสั่งจากล่าสุดถอยไป
+// ---------- รายการโบว์: ย้อนกลับ / เดินหน้า ----------
+// เก็บคำสั่งรายการของผู้ใช้เรียงกันเป็นแถว (ดู migration 0007) ย้อนได้ทีละคำสั่งจากล่าสุดถอยไป
 // และเดินหน้ากลับมาได้ถ้าย้อนเกิน — เหมือน Undo/Redo ในโปรแกรมทั่วไป
 // payload = { created: [เลขที่จดขึ้นมาใหม่], before: [แถวเดิมก่อนถูกแก้/ลบ], after: [แถวตอนถูกย้อน] }
 export const ORDER_UNDO_DEPTH = 20;   // เก็บย้อนหลังได้เท่านี้คำสั่งต่อคน เก่ากว่านั้นทิ้ง
 
-/** จดคำสั่งออเดอร์ที่เพิ่งทำ — ทางเดินหน้าเดิม (ที่เคยย้อนไว้) ใช้ไม่ได้แล้ว จึงทิ้ง */
+/** จดคำสั่งรายการที่เพิ่งทำ — ทางเดินหน้าเดิม (ที่เคยย้อนไว้) ใช้ไม่ได้แล้ว จึงทิ้ง */
 export async function saveOrderUndo(db, uid, label, payload) {
   await db.prepare("DELETE FROM order_undo WHERE user_id = ? AND state = 'undone'").bind(uid).run();
   await db.prepare('INSERT INTO order_undo (user_id, label, payload) VALUES (?, ?, ?)')

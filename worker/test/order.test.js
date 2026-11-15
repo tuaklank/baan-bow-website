@@ -1,5 +1,5 @@
-// สมุดจดออเดอร์โบว์: จด แก้ ลบ และดูเป็นตาราง — ทุกอย่างสั่งทางไลน์
-// ที่ต้องคุมให้แน่คือ (1) แก้แล้วเลขออเดอร์ต้องคงเดิมและของเดิมยังย้อนดูได้
+// สมุดจดรายการโบว์: จด แก้ ลบ และดูเป็นตาราง — ทุกอย่างสั่งทางไลน์
+// ที่ต้องคุมให้แน่คือ (1) แก้แล้วเลขรายการต้องคงเดิมและของเดิมยังย้อนดูได้
 // (2) ลบแล้วหายจากตารางและยอดรวม แต่แถวยังอยู่ (3) หน้าตารางเดาลิงก์ไม่ได้
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +21,7 @@ const order = (over = {}) => ({
 
 // ---------- ฐานข้อมูล ----------
 
-test('จดออเดอร์ได้แม้รู้แค่แบบโบว์ ช่องอื่นเว้นว่างไว้เติมทีหลัง', async () => {
+test('จดรายการได้แม้รู้แค่แบบโบว์ ช่องอื่นเว้นว่างไว้เติมทีหลัง', async () => {
   const db = freshDb();
   const row = await addOrder(db, { order_date: '2026-11-15', style: 'ML' });
   assert.equal(row.style, 'ML');
@@ -32,7 +32,7 @@ test('จดออเดอร์ได้แม้รู้แค่แบบ�
   assert.equal(row.status, 'recorded');
 });
 
-test('แก้ทีละช่องได้ เลขออเดอร์คงเดิม ช่องที่ไม่ได้แก้ไม่ถูกแตะ', async () => {
+test('แก้ทีละช่องได้ เลขรายการคงเดิม ช่องที่ไม่ได้แก้ไม่ถูกแตะ', async () => {
   const db = freshDb();
   const row = await addOrder(db, order());
 
@@ -121,7 +121,7 @@ test('หน้าตาราง: ลำดับช่องตามที่
   const main = page.slice(page.indexOf('<table class="orders">'), page.indexOf('</thead>'));
   const heads = [...main.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]);
   assert.deepEqual(heads, [
-    'เลขที่', 'วันที่', 'แบบโบว์', 'รายละเอียด', 'ช่องทาง', 'ผู้สั่ง', 'ราคา', 'จ่ายแล้ว', 'ค่าจ้างทำ', 'จ่ายแล้ว',
+    'รายการ', 'วันที่', 'แบบโบว์', 'รายละเอียด', 'ช่องทาง', 'ผู้สั่ง', 'ราคา', 'จ่ายแล้ว', 'ค่าจ้างทำ', 'จ่ายแล้ว',
   ]);
 
   assert.ok(page.includes('พฤศจิกายน 2569'));
@@ -186,7 +186,7 @@ test('สรุปยอด: ราคาขาย ค่าจ้าง ส่�
   assert.ok(page.includes('ยังไม่ใส่ราคา 1 ชิ้น · ยังไม่ใส่ค่าจ้าง 1 ชิ้น'));
 });
 
-test('หน้าหลังบ้านมีแท็บออเดอร์ และโชว์ที่ลบแล้วแบบขีดฆ่า', () => {
+test('หน้าหลังบ้านมีแท็บรายการ และโชว์ที่ลบแล้วแบบขีดฆ่า', () => {
   const orders = [
     { id: 2, order_date: '2026-11-15', style: 'mini', channel: 'Shop', detail: null, customer: null, price: 47500, status: 'void' },
     { id: 1, order_date: '2026-11-15', style: 'ML', channel: 'FB', detail: 'แดง', customer: 'คุณซี', price: 390000, status: 'recorded' },
@@ -203,13 +203,13 @@ test('หน้าหลังบ้านมีแท็บออเดอร�
 
 const env = (db) => ({ DB: db, ALLOWED_USER_IDS: 'U1', BASE_URL: 'https://example.test' });
 
-test('พิมพ์ "ออเดอร์" ได้ลิงก์ตารางของเดือนนี้ ไม่ใช่รายการยาวในแชต', async () => {
+test('พิมพ์ "รายการ" ได้ลิงก์ตารางของเดือนนี้ ไม่ใช่รายการยาวในแชต', async () => {
   const db = freshDb();
   const today = todayBkk();
   await addOrder(db, order({ order_date: today }));
   await addOrder(db, order({ order_date: today, style: 'mini', price: null }));
 
-  const answer = await handleText(env(db), 'U1', 'ออเดอร์');
+  const answer = await handleText(env(db), 'U1', 'รายการ');
   const token = await orderSheetToken(db, monthBkk());
   assert.ok(answer.includes(`https://example.test/d/${token}`));
   assert.ok(answer.includes('2 รายการ'));
@@ -217,12 +217,12 @@ test('พิมพ์ "ออเดอร์" ได้ลิงก์ตาร�
   assert.ok(answer.includes('ค่าจ้างทำรวม 0.00'));
   assert.ok(answer.includes('ยังไม่ใส่ราคา 1 รายการ'));
   assert.ok(answer.split('\n').length <= 14, 'คำตอบมีแค่ยอดสรุป รายการทีละชิ้นอยู่ในหน้าตาราง');
-  assert.ok(!answer.includes('คุณเอ'), 'ไม่พิมพ์รายการทีละออเดอร์ลงแชต');
+  assert.ok(!answer.includes('คุณเอ'), 'ไม่พิมพ์รายการทีละรายการลงแชต');
 });
 
-test('เดือนที่ยังไม่มีออเดอร์ บอกวิธีจด ไม่ส่งลิงก์ตารางเปล่า', async () => {
-  const answer = await handleText(env(freshDb()), 'U1', 'ออเดอร์');
-  assert.ok(answer.includes('ยังไม่มีออเดอร์'));
+test('เดือนที่ยังไม่มีรายการ บอกวิธีจด ไม่ส่งลิงก์ตารางเปล่า', async () => {
+  const answer = await handleText(env(freshDb()), 'U1', 'รายการ');
+  assert.ok(answer.includes('ยังไม่มีรายการ'));
   assert.ok(!answer.includes('/d/'));
 });
 
@@ -288,13 +288,13 @@ test('แก้เป็นค่าเดิม ไม่นับเป็น�
   assert.equal((await orderEvents(db, 1)).length, 0);
 });
 
-test('แก้ออเดอร์ที่ไม่มี หรือไม่บอกเลข — บอกให้รู้ ไม่เงียบ', async () => {
+test('แก้รายการที่ไม่มี หรือไม่บอกเลข — บอกให้รู้ ไม่เงียบ', async () => {
   const db = freshDb();
-  assert.ok((await doEditOrder(env(db), cmdOrder({ id: 99, price: 100 }))).includes('ไม่พบออเดอร์ #99'));
-  assert.ok((await doEditOrder(env(db), cmdOrder({ price: 100 }))).includes('ระบุเลขออเดอร์'));
+  assert.ok((await doEditOrder(env(db), cmdOrder({ id: 99, price: 100 }))).includes('ไม่พบรายการ #99'));
+  assert.ok((await doEditOrder(env(db), cmdOrder({ price: 100 }))).includes('ระบุเลขรายการ'));
 });
 
-test('ลบต้องยืนยันก่อน — ขอลบเฉยๆ ออเดอร์ยังอยู่ พิมพ์ยืนยันแล้วจึงหาย', async () => {
+test('ลบต้องยืนยันก่อน — ขอลบเฉยๆ รายการยังอยู่ พิมพ์ยืนยันแล้วจึงหาย', async () => {
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML', customer: 'คุณซี', price: 3900 }));
 
@@ -303,7 +303,7 @@ test('ลบต้องยืนยันก่อน — ขอลบเฉย
   assert.equal((await orderById(db, 1)).status, 'recorded');
 
   const done = await handleText(env(db), 'U1', 'ยืนยัน');
-  assert.ok(done.includes('ลบออเดอร์ #1 แล้ว'));
+  assert.ok(done.includes('ลบรายการ #1 แล้ว'));
   const row = await orderById(db, 1);
   assert.equal(row.status, 'void');
   assert.equal(row.void_reason, 'ลูกค้าเปลี่ยนใจ');
@@ -391,33 +391,33 @@ test('จดใหม่ช่องจ่ายแล้วว่างเส�
   assert.equal((await orderById(db, 1)).paid_at, null);
 });
 
-test('ติ๊กจ่ายแล้วทีละหลายออเดอร์ด้วยข้อความเดียว ทั้งแบบไล่เลขและแบบช่วง', async () => {
+test('ติ๊กจ่ายแล้วทีละหลายรายการด้วยข้อความเดียว ทั้งแบบไล่เลขและแบบช่วง', async () => {
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 6 }));
 
-  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1 3 จ่ายแล้ว');
-  assert.ok(a.includes('ติ๊กจ่ายแล้ว 2 ออเดอร์: #1 #3'));
+  const a = await handleText(env(db), 'U1', 'รายการ 1 3 จ่ายแล้ว');
+  assert.ok(a.includes('ติ๊กจ่ายแล้ว 2 รายการ: #1 #3'));
 
-  const b = await handleText(env(db), 'U1', 'ออเดอร์ 3-5 โอนแล้ว');
-  assert.ok(b.includes('ติ๊กจ่ายแล้ว 2 ออเดอร์: #4 #5'));
+  const b = await handleText(env(db), 'U1', 'รายการ 3-5 โอนแล้ว');
+  assert.ok(b.includes('ติ๊กจ่ายแล้ว 2 รายการ: #4 #5'));
   assert.ok(b.includes('เป็นแบบนั้นอยู่แล้ว: #3'));
 
   const paid = (await monthOrders(db, monthBkk())).filter((r) => r.paid_at).map((r) => r.id);
   assert.deepEqual(paid, [1, 3, 4, 5]);
 
-  const c = await handleText(env(db), 'U1', 'ออเดอร์ 1 ยังไม่จ่าย');
-  assert.ok(c.includes('เอาติ๊กจ่ายแล้วออก 1 ออเดอร์: #1'));
+  const c = await handleText(env(db), 'U1', 'รายการ 1 ยังไม่จ่าย');
+  assert.ok(c.includes('เอาติ๊กจ่ายแล้วออก 1 รายการ: #1'));
   assert.equal((await orderById(db, 1)).paid_at, null);
 
-  const d = await handleText(env(db), 'U1', 'ออเดอร์ 99 จ่ายแล้ว');
+  const d = await handleText(env(db), 'U1', 'รายการ 99 จ่ายแล้ว');
   assert.ok(d.includes('ไม่พบหรือถูกลบแล้ว: #99'));
 });
 
-test('ข้อความออเดอร์ที่ไม่ใช่เรื่องจ่ายเงิน ไม่ถูกทางลัดจ่ายแล้วดักไว้', async () => {
+test('ข้อความรายการที่ไม่ใช่เรื่องจ่ายเงิน ไม่ถูกทางลัดจ่ายแล้วดักไว้', async () => {
   const db = freshDb();
-  assert.equal(await doMarkPaid(env(db), 'ออเดอร์ 24 สีแดงทอง'), null);
-  assert.equal(await doMarkPaid(env(db), 'ออเดอร์ 24 ราคา 3200'), null);
-  assert.equal(await doMarkPaid(env(db), 'ออเดอร์ จ่ายแล้ว'), null);
+  assert.equal(await doMarkPaid(env(db), 'รายการ 24 สีแดงทอง'), null);
+  assert.equal(await doMarkPaid(env(db), 'รายการ 24 ราคา 3200'), null);
+  assert.equal(await doMarkPaid(env(db), 'รายการ จ่ายแล้ว'), null);
 });
 
 // ---------- ค่าจ้างทำโบว์ ----------
@@ -426,20 +426,20 @@ test('ใส่ค่าจ้างทำให้หลายชิ้นพ�
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 4, price: 3900 }));
 
-  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1-3 ค่าจ้าง 150');
-  assert.ok(a.includes('ใส่ค่าจ้างทำชิ้นละ 150.00 3 ออเดอร์: #1–#3'));
+  const a = await handleText(env(db), 'U1', 'รายการ 1-3 ค่าจ้าง 150');
+  assert.ok(a.includes('ใส่ค่าจ้างทำชิ้นละ 150.00 3 รายการ: #1–#3'));
   let rows = await monthOrders(db, monthBkk());
   assert.deepEqual(rows.map((r) => r.wage), [15000, 15000, 15000, null]);
   assert.ok(rows.every((r) => r.wage_paid_at == null), 'ใส่ราคาค่าจ้างเฉยๆ ยังไม่ถือว่าจ่าย');
 
-  const b = await handleText(env(db), 'U1', 'ออเดอร์ 1 2 จ่ายค่าจ้างแล้ว');
-  assert.ok(b.includes('ติ๊กจ่ายค่าจ้างแล้ว 2 ออเดอร์: #1 #2'));
+  const b = await handleText(env(db), 'U1', 'รายการ 1 2 จ่ายค่าจ้างแล้ว');
+  assert.ok(b.includes('ติ๊กจ่ายค่าจ้างแล้ว 2 รายการ: #1 #2'));
   rows = await monthOrders(db, monthBkk());
   assert.deepEqual(rows.map((r) => Boolean(r.wage_paid_at)), [true, true, false, false]);
   assert.ok(rows.every((r) => r.paid_at == null), 'จ่ายค่าจ้างต้องไม่ไปติ๊กช่องลูกค้าจ่าย');
 
-  const c = await handleText(env(db), 'U1', 'ออเดอร์ 1 ยังไม่จ่ายค่าจ้าง');
-  assert.ok(c.includes('เอาติ๊กจ่ายค่าจ้างแล้วออก 1 ออเดอร์: #1'));
+  const c = await handleText(env(db), 'U1', 'รายการ 1 ยังไม่จ่ายค่าจ้าง');
+  assert.ok(c.includes('เอาติ๊กจ่ายค่าจ้างแล้วออก 1 รายการ: #1'));
   assert.equal((await orderById(db, 1)).wage_paid_at, null);
   assert.equal((await orderById(db, 1)).wage, 15000, 'เอาติ๊กออก ราคาค่าจ้างต้องยังอยู่');
 });
@@ -447,8 +447,8 @@ test('ใส่ค่าจ้างทำให้หลายชิ้นพ�
 test('ใส่ค่าจ้างพร้อมบอกว่าจ่ายแล้วในข้อความเดียว', async () => {
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'mini', qty: 2 }));
-  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1-2 ค่าจ้างชิ้นละ 50 บาท จ่ายแล้ว');
-  assert.ok(a.includes('ใส่ค่าจ้างทำชิ้นละ 50.00 + ติ๊กจ่ายค่าจ้างแล้ว 2 ออเดอร์'));
+  const a = await handleText(env(db), 'U1', 'รายการ 1-2 ค่าจ้างชิ้นละ 50 บาท จ่ายแล้ว');
+  assert.ok(a.includes('ใส่ค่าจ้างทำชิ้นละ 50.00 + ติ๊กจ่ายค่าจ้างแล้ว 2 รายการ'));
   const rows = await monthOrders(db, monthBkk());
   assert.deepEqual(rows.map((r) => [r.wage, Boolean(r.wage_paid_at), r.paid_at]), [[5000, true, null], [5000, true, null]]);
 });
@@ -456,7 +456,7 @@ test('ใส่ค่าจ้างพร้อมบอกว่าจ่า�
 test('"จ่ายแล้ว" เฉยๆ คือลูกค้าจ่าย ไม่ใช่จ่ายค่าจ้าง', async () => {
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML', price: 3900, wage: 150 }));
-  await handleText(env(db), 'U1', 'ออเดอร์ 1 จ่ายแล้ว');
+  await handleText(env(db), 'U1', 'รายการ 1 จ่ายแล้ว');
   const r = await orderById(db, 1);
   assert.equal(r.paid_at, todayBkk());
   assert.equal(r.wage_paid_at, null);
@@ -479,8 +479,8 @@ test('แก้ด้วยชื่อช่องนำหน้า: หลา
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 3 }));
 
-  const a = await handleText(env(db), 'U1', 'ออเดอร์ 2 ผู้สั่ง คุณเอ ช่องทาง ไลน์ ราคา 2,900 บาท');
-  assert.ok(a.startsWith('✅ แก้ออเดอร์ #2 แล้ว'));
+  const a = await handleText(env(db), 'U1', 'รายการ 2 ผู้สั่ง คุณเอ ช่องทาง ไลน์ ราคา 2,900 บาท');
+  assert.ok(a.startsWith('✅ แก้รายการ #2 แล้ว'));
   assert.ok(a.includes('ผู้สั่ง คุณเอ · ช่องทาง Line · ราคา 2,900.00'));
   assert.ok(!a.includes('/d/'), 'แก้แล้วไม่ต้องส่งลิงก์ตารางกลับมาทุกครั้ง');
   assert.ok(a.split('\n').length <= 2, 'คำตอบต้องสั้น');
@@ -495,17 +495,17 @@ test('แก้ทีละช่อง: แบบ รายละเอีย�
   await doAddOrder(env(db), cmdOrder({ style: 'ML', customer: 'คุณเอ' }));
   const e = env(db);
 
-  await handleText(e, 'U1', 'ออเดอร์ 1 แบบที่ 2');
-  await handleText(e, 'U1', 'ออเดอร์ 1 รายละเอียด แดงทอง ราคาพิเศษ');
-  await handleText(e, 'U1', 'ออเดอร์ 1 วันที่ 12/11/69');
-  await handleText(e, 'U1', 'ออเดอร์ 1 ค่าจ้าง 150');
+  await handleText(e, 'U1', 'รายการ 1 แบบที่ 2');
+  await handleText(e, 'U1', 'รายการ 1 รายละเอียด แดงทอง ราคาพิเศษ');
+  await handleText(e, 'U1', 'รายการ 1 วันที่ 12/11/69');
+  await handleText(e, 'U1', 'รายการ 1 ค่าจ้าง 150');
   let r = await orderById(db, 1);
   assert.equal(r.style, 'แบบที่ 2');
   assert.equal(r.detail, 'แดงทอง ราคาพิเศษ', 'คำว่าราคาที่ติดอยู่ในรายละเอียดต้องไม่ถูกอ่านเป็นช่องราคา');
   assert.equal(r.order_date, '2026-11-12');
   assert.equal(r.wage, 15000);
 
-  const c = await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง -');
+  const c = await handleText(e, 'U1', 'รายการ 1 ผู้สั่ง -');
   assert.ok(c.includes('ผู้สั่ง -'));
   r = await orderById(db, 1);
   assert.equal(r.customer, null);
@@ -515,8 +515,8 @@ test('แก้ทีละช่อง: แบบ รายละเอีย�
 test('แก้หลายชิ้นพร้อมกัน พร้อมติ๊กจ่ายท้ายข้อความ', async () => {
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 5 }));
-  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1-4 ผู้สั่ง คุณบี ราคา 1500 จ่ายแล้ว');
-  assert.ok(a.includes('แก้ออเดอร์ #1–#4 แล้ว (4 ชิ้น)'));
+  const a = await handleText(env(db), 'U1', 'รายการ 1-4 ผู้สั่ง คุณบี ราคา 1500 จ่ายแล้ว');
+  assert.ok(a.includes('แก้รายการ #1–#4 แล้ว (4 ชิ้น)'));
   assert.ok(a.includes('จ่ายแล้ว ✓'));
   const rows = await monthOrders(db, monthBkk());
   assert.deepEqual(rows.map((r) => [r.customer, r.price, Boolean(r.paid_at)]),
@@ -527,8 +527,8 @@ test('แก้หลายชิ้นพร้อมกัน พร้อม�
 test('ค่าผิดรูปแบบ: บอกตัวอย่างที่ถูก ไม่แก้อะไร และไม่ส่งต่อให้ AI เดา', async () => {
   const db = freshDb();
   await doAddOrder(env(db), cmdOrder({ style: 'ML' }));
-  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1 ราคา แพงมาก');
-  assert.ok(a.includes('ราคาต้องเป็นตัวเลข') && a.includes('ออเดอร์ 1 ราคา 2900'));
+  const a = await handleText(env(db), 'U1', 'รายการ 1 ราคา แพงมาก');
+  assert.ok(a.includes('ราคาต้องเป็นตัวเลข') && a.includes('รายการ 1 ราคา 2900'));
   assert.equal((await orderById(db, 1)).price, null);
 });
 
@@ -537,43 +537,43 @@ test('เรียกดู: ชิ้นเดียว รายชิ้น�
   const e = env(db);
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3 }));
   await doAddOrder(e, cmdOrder({ style: 'mini', qty: 2 }));
-  await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900 จ่ายแล้ว');
-  await handleText(e, 'U1', 'ออเดอร์ 2 ผู้สั่ง คุณบี ราคา 2900');
+  await handleText(e, 'U1', 'รายการ 1 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900 จ่ายแล้ว');
+  await handleText(e, 'U1', 'รายการ 2 ผู้สั่ง คุณบี ราคา 2900');
 
-  const one = await handleText(e, 'U1', 'ออเดอร์ 1');
-  assert.ok(one.includes('ออเดอร์ #1') && one.includes('ผู้สั่ง: คุณเอ'));
+  const one = await handleText(e, 'U1', 'รายการ 1');
+  assert.ok(one.includes('รายการ #1') && one.includes('ผู้สั่ง: คุณเอ'));
 
-  const free = await handleText(e, 'U1', 'ออเดอร์ ว่าง');
+  const free = await handleText(e, 'U1', 'รายการ ว่าง');
   assert.ok(free.includes('ยังไม่มีผู้สั่ง') && free.includes('3 ชิ้น'));
   assert.ok(free.includes('#3 ML') && free.includes('#5 mini') && !free.includes('#1 ML'));
 
-  const unpaid = await handleText(e, 'U1', 'ออเดอร์ ยังไม่จ่าย');
+  const unpaid = await handleText(e, 'U1', 'รายการ ยังไม่จ่าย');
   assert.ok(unpaid.includes('#2 ML') && !unpaid.includes('#1 ML') && !unpaid.includes('#3 ML'),
     'ยังไม่จ่าย = มีผู้สั่งแล้วแต่ยังไม่จ่าย ชิ้นที่ยังว่างไม่นับ');
 
-  const style = await handleText(e, 'U1', 'ออเดอร์ แบบ mini');
+  const style = await handleText(e, 'U1', 'รายการ แบบ mini');
   assert.ok(style.includes('2 ชิ้น') && style.includes('#4 mini') && !style.includes('ML'));
 
-  const who = await handleText(e, 'U1', 'ออเดอร์ ผู้สั่ง คุณเอ');
+  const who = await handleText(e, 'U1', 'รายการ ผู้สั่ง คุณเอ');
   assert.ok(who.includes('1 ชิ้น') && who.includes('#1 ML'));
 
-  assert.ok((await handleText(e, 'U1', 'ออเดอร์ ช่องทาง ไลน์')).includes('#1 ML'));
+  assert.ok((await handleText(e, 'U1', 'รายการ ช่องทาง ไลน์')).includes('#1 ML'));
 
-  for (const cmd of ['ตารางออเดอร์', 'ออเดอร์']) {
+  for (const cmd of ['ตารางรายการ', 'รายการ']) {
     assert.ok((await handleText(e, 'U1', cmd)).includes('/d/'), cmd + ' ต้องส่งลิงก์ตาราง A4');
   }
   assert.ok(!free.includes('/d/') && !one.includes('/d/'), 'เรียกดูรายชิ้นไม่ต้องแนบลิงก์');
 });
 
-test('คู่มือคำสั่งออเดอร์เรียกได้จากไลน์ และตัวอย่างในคู่มือใช้ได้จริง', async () => {
+test('คู่มือคำสั่งรายการเรียกได้จากไลน์ และตัวอย่างในคู่มือใช้ได้จริง', async () => {
   const db = freshDb();
   const e = env(db);
-  const help = await handleText(e, 'U1', 'วิธีสั่งออเดอร์');
-  assert.ok(help.includes('ออเดอร์ 3 ผู้สั่ง คุณเอ') && help.includes('ตารางออเดอร์'));
+  const help = await handleText(e, 'U1', 'วิธีสั่งรายการ');
+  assert.ok(help.includes('รายการ 3 ผู้สั่ง คุณเอ') && help.includes('ตารางรายการ'));
 
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 10 }));
-  // ทุกบรรทัดตัวอย่างที่ขึ้นต้นด้วย "ออเดอร์" หรือ "ตารางออเดอร์" ต้องเข้าทางลัด ไม่หลุดไปถึง AI
-  const lines = help.split('\n').filter((l) => /^• (ออเดอร์|ตารางออเดอร์)/.test(l))
+  // ทุกบรรทัดตัวอย่างที่ขึ้นต้นด้วย "รายการ" หรือ "ตารางรายการ" ต้องเข้าทางลัด ไม่หลุดไปถึง AI
+  const lines = help.split('\n').filter((l) => /^• (รายการ|ตารางรายการ)/.test(l))
     .map((l) => l.slice(2).replace(/\s{2,}\(.*$/, '').trim());
   assert.ok(lines.length >= 20);
   for (const l of lines) {
@@ -582,65 +582,99 @@ test('คู่มือคำสั่งออเดอร์เรียก�
   }
 });
 
-// ---------- ลบหลายออเดอร์ / กู้เลขเดิม / ย้อนกลับ ----------
-// ที่มา: เจ้าของร้านพิมพ์ "สั่งใหม่ ออเดอร์ 7 ..." ตั้งใจจะใช้เลข 7 ที่ลบไป
+// ---------- ลบหลายรายการ / กู้เลขเดิม / ย้อนกลับ ----------
+// ที่มา: เจ้าของร้านพิมพ์ "สั่งใหม่ รายการ 7 ..." ตั้งใจจะใช้เลข 7 ที่ลบไป
 // แต่เลข 7 ถูกอ่านเป็นจำนวนชิ้น ได้แถวใหม่มาเป็นสิบ และไม่มีทางถอย
 
-const REAL_MSG = 'สั่งใหม่ ออเดอร์ 7 แบบโบว์ แบบที่2 รายละเอียดโบว์ MLผ้าต่วนทอง/ดำ ขอบขยับ ช่องทาง Line ราคา3,000  ค่าจ้างทำ300';
+const REAL_MSG = 'สั่งใหม่ รายการ 7 แบบโบว์ แบบที่2 รายละเอียดโบว์ MLผ้าต่วนทอง/ดำ ขอบขยับ ช่องทาง Line ราคา3,000  ค่าจ้างทำ300';
 
-test('ลบทีละหลายออเดอร์: ถามยืนยันก่อน แล้วหายจากตารางทั้งชุด', async () => {
+test('ลบทีละหลายรายการ: ถามยืนยันก่อน แล้วหายจากตารางทั้งชุด', async () => {
   const db = freshDb();
   const e = env(db);
   await doAddOrder(e, cmdOrder({ style: 'แบบที่ 1', qty: 6 }));
   await doAddOrder(e, cmdOrder({ style: 'แบบที่ 2', qty: 4 }));
 
-  const ask = await handleText(e, 'U1', 'ลบออเดอร์ 3-8');
-  assert.ok(ask.includes('จะลบ 6 ออเดอร์: #3–#8'));
+  const ask = await handleText(e, 'U1', 'ลบรายการ 3-8');
+  assert.ok(ask.includes('จะลบ 6 รายการ: #3–#8'));
   assert.ok(ask.includes('แบบที่ 1 ×4') && ask.includes('แบบที่ 2 ×2'));
   assert.equal((await monthOrders(db, monthBkk())).length, 10, 'ยังไม่ยืนยันต้องยังไม่ลบ');
 
   const done = await handleText(e, 'U1', 'ยืนยัน');
-  assert.ok(done.includes('ลบออเดอร์ #3–#8 แล้ว (6 ชิ้น)'));
+  assert.ok(done.includes('ลบรายการ #3–#8 แล้ว (6 ชิ้น)'));
   assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2, 9, 10]);
   assert.equal((await orderById(db, 5)).status, 'void', 'ลบ = ยกเลิก แถวต้องยังอยู่');
 
-  const again = await handleText(e, 'U1', 'ลบออเดอร์ 2 5 99');
-  assert.ok(again.includes('จะลบ 1 ออเดอร์: #2') && again.includes('ข้าม #5 #99'));
+  const again = await handleText(e, 'U1', 'ลบรายการ 2 5 99');
+  assert.ok(again.includes('จะลบ 1 รายการ: #2') && again.includes('ข้าม #5 #99'));
 });
 
-test('ข้อความจริงที่เคยพัง: "สั่งใหม่ ออเดอร์ 7 ..." ต้องกู้เลข 7 กลับมา ไม่จดแถวใหม่', async () => {
+test('ข้อความจริงที่เคยพัง: "สั่งใหม่ รายการ 7 ..." ต้องจดทับเลข 7 ที่ลบไว้ ไม่จดแถวใหม่', async () => {
   const db = freshDb();
   const e = env(db);
-  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 3', qty: 8 }));
-  await handleText(e, 'U1', 'ลบออเดอร์ 6-8');
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 3', qty: 8, customer: 'lek', price: 4000 }));
+  await handleText(e, 'U1', 'รายการ 7 จ่ายแล้ว');
+  await handleText(e, 'U1', 'ลบรายการ 6-8');
   await handleText(e, 'U1', 'ยืนยัน');
 
   const a = await handleText(e, 'U1', REAL_MSG);
-  assert.ok(a.includes('กู้คืนและแก้ออเดอร์ #7 แล้ว'), a);
+  assert.ok(a.includes('จดรายการ #7 แล้ว'), a);
   const r = await orderById(db, 7);
   assert.deepEqual([r.status, r.style, r.detail, r.channel, r.price, r.wage],
     ['recorded', 'แบบที่ 2', 'MLผ้าต่วนทอง/ดำ ขอบขยับ', 'Line', 300000, 30000]);
-  const all = await recentOrders(db, 100);
-  assert.equal(all.length, 8, 'ต้องไม่มีแถวใหม่งอกขึ้นมา');
+  assert.deepEqual([r.customer, r.paid_at], [null, null], 'ชื่อลูกค้าและติ๊กจ่ายของแถวที่ลบไปต้องไม่ค้างมา');
+  assert.equal((await recentOrders(db, 100)).length, 8, 'ต้องไม่มีแถวใหม่งอกขึ้นมา');
   assert.equal((await orderById(db, 6)).status, 'void', 'เลขอื่นที่ลบไว้ต้องไม่ถูกแตะ');
+  assert.ok((await orderEvents(db, 7)).some((ev) => ev.text.includes('ของเดิม: แบบที่ 3 · lek')), 'ของเดิมต้องย้อนดูได้');
+
+  // คำเดิม "ออเดอร์" ยังใช้ได้เหมือน "รายการ"
+  const b = await handleText(e, 'U1', 'ออเดอร์ 6 แบบ ML ราคา 3000');
+  assert.ok(b.includes('จดรายการ #6 แล้ว'));
 });
 
-test('สั่งใหม่กับเลขที่ยังไม่เคยมี: ไม่จดอะไร และบอกวิธีจดชิ้นใหม่', async () => {
-  const db = freshDb();
-  const a = await handleText(env(db), 'U1', 'สั่งใหม่ ออเดอร์ 30 แบบ ML ราคา 3000');
-  assert.ok(a.includes('ไม่พบหรือถูกลบแล้ว: #30') && a.includes('สั่งโบว์'));
-  assert.equal((await recentOrders(db, 100)).length, 0);
-});
-
-test('แก้ออเดอร์ที่ถูกลบแบบธรรมดา (ไม่มีคำว่าสั่งใหม่) ไม่ปลุกแถวกลับมาเอง', async () => {
+test('จดรายการใหม่เติมเลขที่ว่างก่อน: ลบ 6 แล้วสั่งใหม่ต้องได้ 6 ไม่ใช่เลขต่อท้าย', async () => {
   const db = freshDb();
   const e = env(db);
-  await doAddOrder(e, cmdOrder({ style: 'ML' }));
-  await handleText(e, 'U1', 'ลบออเดอร์ 1');
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 8, customer: 'lek' }), 'U1');
+  await handleText(e, 'U1', 'ลบรายการ 3 6 7');
   await handleText(e, 'U1', 'ยืนยัน');
-  const a = await handleText(e, 'U1', 'ออเดอร์ 1 ราคา 3000');
-  assert.ok(a.includes('ไม่พบหรือถูกลบแล้ว: #1'));
-  assert.equal((await orderById(db, 1)).status, 'void');
+
+  const one = await doAddOrder(e, cmdOrder({ style: 'mini', price: 475 }), 'U1');
+  assert.ok(one.includes('จดรายการ #3'), one);
+  assert.deepEqual([(await orderById(db, 3)).style, (await orderById(db, 3)).customer], ['mini', null]);
+
+  // สั่งสี่ชิ้น: ได้เลขว่างที่เหลือ (6, 7) แล้วต่อท้ายอีกสอง (9, 10)
+  const many = await doAddOrder(e, cmdOrder({ style: 'ดอกไม้', qty: 4 }), 'U1');
+  assert.ok(many.includes('#6 #7 #9 #10 ดอกไม้ ×4'), many);
+  assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+  // ย้อนกลับ: เลขที่ยืมมากลับไปว่าง เลขที่ออกใหม่หายจากตาราง
+  await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2, 3, 4, 5, 8]);
+  await handleText(e, 'U1', 'เดินหน้า');
+  assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+test('พิมพ์เลขรายการเอง: เลขถัดไปจดได้ เลขที่ข้ามไปไม่จด และเลขว่างต้องบอกแบบโบว์', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }));
+
+  const next = await handleText(e, 'U1', 'รายการ 3 แบบ mini ผู้สั่ง คุณเอ ราคา 475');
+  assert.ok(next.includes('จดรายการ #3 แล้ว'), next);
+  assert.deepEqual([(await orderById(db, 3)).style, (await orderById(db, 3)).customer], ['mini', 'คุณเอ']);
+
+  const far = await handleText(e, 'U1', 'รายการ 30 แบบ ML ราคา 3000');
+  assert.ok(far.includes('ยังไม่มีรายการ #30') && far.includes('เลขถัดไปคือ 4'), far);
+  assert.equal((await recentOrders(db, 100)).length, 3, 'พิมพ์เลขเกินต้องไม่เกิดช่องว่างกลางสมุด');
+
+  await handleText(e, 'U1', 'ลบรายการ 1');
+  await handleText(e, 'U1', 'ยืนยัน');
+  const noStyle = await handleText(e, 'U1', 'รายการ 1 ราคา 3000');
+  assert.ok(noStyle.includes('รายการ #1 ยังว่างอยู่') && noStyle.includes('แบบโบว์'), noStyle);
+  assert.equal((await orderById(db, 1)).status, 'void', 'ไม่บอกแบบโบว์ต้องไม่ปลุกแถวที่ลบไว้');
+
+  // ติ๊กจ่ายกับเลขที่ว่างไม่ถือเป็นการจดใหม่
+  assert.ok((await handleText(e, 'U1', 'รายการ 1 จ่ายแล้ว')).includes('ไม่พบหรือถูกลบแล้ว: #1'));
 });
 
 test('ย้อนกลับ: จดผิดหลายชิ้น -> แถวที่จดมาหายจากตาราง', async () => {
@@ -651,10 +685,10 @@ test('ย้อนกลับ: จดผิดหลายชิ้น -> แ�
   assert.equal((await monthOrders(db, monthBkk())).length, 17);
 
   const a = await handleText(e, 'U1', 'ย้อนกลับ');
-  assert.ok(a.includes('ย้อนกลับแล้ว: จดออเดอร์ #3–#17 (15 ชิ้น)'), a);
+  assert.ok(a.includes('ย้อนกลับแล้ว: จดรายการ #3–#17 (15 ชิ้น)'), a);
   assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2]);
 
-  assert.ok(a.includes('พิมพ์ "ย้อนกลับ" อีกครั้ง = ย้อน: จดออเดอร์ #1 #2'), 'ต้องบอกว่าย้อนครั้งถัดไปจะโดนอะไร');
+  assert.ok(a.includes('พิมพ์ "ย้อนกลับ" อีกครั้ง = ย้อน: จดรายการ #1 #2'), 'ต้องบอกว่าย้อนครั้งถัดไปจะโดนอะไร');
 });
 
 test('ย้อนกลับทีละคำสั่งได้หลายขั้น ย้อนเกินแล้วเดินหน้ากลับมาจุดเดิมได้', async () => {
@@ -664,28 +698,28 @@ test('ย้อนกลับทีละคำสั่งได้หลา�
 
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3 }), 'U1');                     // 1 จด
   const s1 = await state();
-  await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง คุณเอ ราคา 2900');                    // 2 แก้
+  await handleText(e, 'U1', 'รายการ 1 ผู้สั่ง คุณเอ ราคา 2900');                    // 2 แก้
   const s2 = await state();
-  await handleText(e, 'U1', 'ออเดอร์ 1-2 จ่ายแล้ว');                                // 3 ติ๊ก
+  await handleText(e, 'U1', 'รายการ 1-2 จ่ายแล้ว');                                // 3 ติ๊ก
   const s3 = await state();
-  await handleText(e, 'U1', 'ลบออเดอร์ 3');
+  await handleText(e, 'U1', 'ลบรายการ 3');
   await handleText(e, 'U1', 'ยืนยัน');                                              // 4 ลบ
   const s4 = await state();
   assert.equal(s4.length, 2);
 
   // ถอยสามขั้น: ลบ -> ติ๊ก -> แก้
-  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('ย้อนกลับแล้ว: ลบออเดอร์ #3'));
+  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('ย้อนกลับแล้ว: ลบรายการ #3'));
   assert.deepEqual(await state(), s3);
-  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('ย้อนกลับแล้ว: แก้ออเดอร์ #1 #2'));
+  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('ย้อนกลับแล้ว: แก้รายการ #1 #2'));
   assert.deepEqual(await state(), s2);
   await handleText(e, 'U1', 'ย้อนกลับ');
   assert.deepEqual(await state(), s1);
 
   // ย้อนเกินไปสองขั้น — เดินหน้ากลับมา
-  assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('เดินหน้าแล้ว: แก้ออเดอร์ #1'));
+  assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('เดินหน้าแล้ว: แก้รายการ #1'));
   assert.deepEqual(await state(), s2);
   const f = await handleText(e, 'U1', 'เดินหน้า');
-  assert.ok(f.includes('เดินหน้าแล้ว: แก้ออเดอร์ #1 #2') && f.includes('เดินหน้าได้อีก 1 ครั้ง'));
+  assert.ok(f.includes('เดินหน้าแล้ว: แก้รายการ #1 #2') && f.includes('เดินหน้าได้อีก 1 ครั้ง'));
   assert.deepEqual(await state(), s3);
   assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('กลับมาถึงจุดล่าสุดแล้ว'));
   assert.deepEqual(await state(), s4);
@@ -696,18 +730,18 @@ test('ย้อนกลับทีละคำสั่งได้หลา�
   for (let i = 0; i < 4; i++) await handleText(e, 'U1', 'ย้อนกลับ');
   assert.equal((await state()).length, 0);
   const end = await handleText(e, 'U1', 'ย้อนกลับ');
-  assert.ok(end.includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับแล้ว') && end.includes('"เดินหน้า" ได้อีก 4 ครั้ง'));
+  assert.ok(end.includes('ไม่มีคำสั่งรายการให้ย้อนกลับแล้ว') && end.includes('"เดินหน้า" ได้อีก 4 ครั้ง'));
   await handleText(e, 'U1', 'เดินหน้า');
   assert.deepEqual(await state(), s1, 'เดินหน้าหลังย้อนการจด ต้องได้แถวเลขเดิมกลับมา ไม่ใช่แถวใหม่');
 });
 
-test('สั่งคำสั่งออเดอร์ใหม่หลังย้อนกลับ: เดินหน้าไปทางเดิมไม่ได้แล้ว', async () => {
+test('สั่งคำสั่งรายการใหม่หลังย้อนกลับ: เดินหน้าไปทางเดิมไม่ได้แล้ว', async () => {
   const db = freshDb();
   const e = env(db);
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }), 'U1');
-  await handleText(e, 'U1', 'ออเดอร์ 1 ราคา 99');
+  await handleText(e, 'U1', 'รายการ 1 ราคา 99');
   await handleText(e, 'U1', 'ย้อนกลับ');
-  await handleText(e, 'U1', 'ออเดอร์ 1 ราคา 2900');                                  // ทางใหม่
+  await handleText(e, 'U1', 'รายการ 1 ราคา 2900');                                  // ทางใหม่
   assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('ไม่มีอะไรให้เดินหน้า'));
   assert.equal((await orderById(db, 1)).price, 290000, 'ราคา 99 ที่ย้อนทิ้งไปต้องไม่โผล่กลับมา');
 });
@@ -716,11 +750,11 @@ test('ย้อนกลับ: แก้ผิด -> ทุกช่องก�
   const db = freshDb();
   const e = env(db);
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3 }));
-  await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900');
-  await handleText(e, 'U1', 'ออเดอร์ 1-3 ผู้สั่ง คุณผิด ราคา 99 จ่ายแล้ว');   // แก้ผิดทั้งสามชิ้น
+  await handleText(e, 'U1', 'รายการ 1 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900');
+  await handleText(e, 'U1', 'รายการ 1-3 ผู้สั่ง คุณผิด ราคา 99 จ่ายแล้ว');   // แก้ผิดทั้งสามชิ้น
 
   const a = await handleText(e, 'U1', 'ย้อนกลับ');
-  assert.ok(a.includes('ย้อนกลับแล้ว: แก้ออเดอร์ #1–#3'));
+  assert.ok(a.includes('ย้อนกลับแล้ว: แก้รายการ #1–#3'));
   const rows = await monthOrders(db, monthBkk());
   assert.deepEqual(rows.map((r) => [r.customer, r.price, r.paid_at]),
     [['คุณเอ', 290000, null], [null, null, null], [null, null, null]]);
@@ -731,15 +765,15 @@ test('ย้อนกลับ: ติ๊กจ่ายผิด และล�
   const e = env(db);
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 4 }));
 
-  await handleText(e, 'U1', 'ออเดอร์ 1-4 จ่ายค่าจ้างแล้ว');
+  await handleText(e, 'U1', 'รายการ 1-4 จ่ายค่าจ้างแล้ว');
   await handleText(e, 'U1', 'ย้อนกลับ');
   assert.ok((await monthOrders(db, monthBkk())).every((r) => r.wage_paid_at == null));
 
-  await handleText(e, 'U1', 'ลบออเดอร์ 2-4');
+  await handleText(e, 'U1', 'ลบรายการ 2-4');
   await handleText(e, 'U1', 'ยืนยัน');
   assert.equal((await monthOrders(db, monthBkk())).length, 1);
   const a = await handleText(e, 'U1', 'ย้อนกลับ');
-  assert.ok(a.includes('ย้อนกลับแล้ว: ลบออเดอร์ #2–#4'));
+  assert.ok(a.includes('ย้อนกลับแล้ว: ลบรายการ #2–#4'));
   assert.equal((await monthOrders(db, monthBkk())).length, 4);
   assert.equal((await orderById(db, 3)).void_reason, null);
 });
@@ -748,10 +782,10 @@ test('ย้อนกลับเป็นของใครของมัน �
   const db = freshDb();
   const e = { ...env(db), ALLOWED_USER_IDS: 'U1,U2' };
   await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }), 'U1');
-  await handleText(e, 'U1', 'ตารางออเดอร์');
-  await handleText(e, 'U1', 'ออเดอร์ ว่าง');
-  assert.ok((await handleText(e, 'U2', 'ย้อนกลับ')).includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับ'));
+  await handleText(e, 'U1', 'ตารางรายการ');
+  await handleText(e, 'U1', 'รายการ ว่าง');
+  assert.ok((await handleText(e, 'U2', 'ย้อนกลับ')).includes('ไม่มีคำสั่งรายการให้ย้อนกลับ'));
   assert.ok((await handleText(e, 'U2', 'เดินหน้า')).includes('ไม่มีอะไรให้เดินหน้า'));
-  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('จดออเดอร์ #1 #2'));
+  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('จดรายการ #1 #2'));
   assert.equal((await monthOrders(db, monthBkk())).length, 0);
 });
