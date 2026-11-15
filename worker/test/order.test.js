@@ -944,3 +944,46 @@ test('เรียกดู: รายการที่มัดจำแล้
   const sum = await handleText(e, 'U1', 'ตารางรายการ');
   assert.ok(sum.includes('มัดจำ 1,000.00 (1 ชิ้น)') && sum.includes('คงเหลือต้องเก็บ 8,000.00') && sum.includes('ส่งแล้ว 1 / 4'), sum);
 });
+
+// ---------- ข้อความจริง 15/11 23:2x: เปลี่ยนแบบเป็น "แบบที่2(สีน้ำเงิน)" ----------
+
+test('เปลี่ยนแบบโบว์ที่มีวงเล็บต่อท้าย ทั้งเว้นวรรคและไม่เว้นวรรค ไม่ไปแตะรายละเอียด', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'แบบที่ 2', detail: 'โบว์ML แดง/ทอง ขอบขยับ' }));
+
+  for (const [msg, want] of [
+    ['แก้ไขรายการที่ 1\nแบบโบว์  แบบที่2(สีน้ำเงิน)', 'แบบที่ 2 (สีน้ำเงิน)'],
+    ['แก้ไขรายการที่ 1\nแบบโบว์แบบที่2(น้ำเงิน)', 'แบบที่ 2 (น้ำเงิน)'],
+    ['รายการ 1 แบบ ที่ 3 (ทอง)', 'แบบที่ 3 (ทอง)'],
+    ['รายการ 1 แบบที่2', 'แบบที่ 2'],
+    ['รายการ 1 แบบ คริสต์มาส', 'คริสต์มาส'],
+  ]) {
+    const a = await handleText(e, 'U1', msg);
+    assert.ok(a.includes('แก้รายการ #1 แล้ว'), msg + ' -> ' + a);
+    const r = await orderById(db, 1);
+    assert.equal(r.style, want, msg);
+    assert.equal(r.detail, 'โบว์ML แดง/ทอง ขอบขยับ', 'รายละเอียดต้องไม่ถูกแตะ: ' + msg);
+  }
+});
+
+test('การ์ดหลายบรรทัด: ช่องที่เว้นว่างไม่ทำให้บรรทัดถัดไปไปปนเป็นค่าของมัน', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }));
+
+  const a = await handleText(e, 'U1', 'รายการ 1\nแบบ: แบบที่ 2\nรายละเอียด: โบว์ML แดง/ทอง ขอบขยับ\nช่องทาง:\nผู้สั่ง: ว่าง\nราคา: 2,900\nค่าจ้างทำ: 250');
+  assert.ok(a.includes('แก้รายการ #1 แล้ว'), a);
+  const r = await orderById(db, 1);
+  assert.deepEqual([r.style, r.detail, r.channel, r.customer, r.price, r.wage],
+    ['แบบที่ 2', 'โบว์ML แดง/ทอง ขอบขยับ', null, null, 290000, 25000]);
+
+  // ช่องทางมีค่า ผู้สั่งว่าง
+  await handleText(e, 'U1', 'รายการ 2\nช่องทาง: Line\nผู้สั่ง: -\nราคา: 3000');
+  const r2 = await orderById(db, 2);
+  assert.deepEqual([r2.channel, r2.customer, r2.price], ['Line', null, 300000]);
+
+  // แก้ข้อมูลเสียที่ค้างอยู่: ล้างช่องทางทีละหลายรายการ
+  await handleText(e, 'U1', 'รายการ 1-2 ช่องทาง -');
+  assert.deepEqual((await monthOrders(db, monthBkk())).map((x) => x.channel), [null, null]);
+});
