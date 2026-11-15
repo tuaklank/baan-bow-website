@@ -8,9 +8,10 @@ import { CRON_EVENING } from './config.js';
 import {
   docByToken, recentDocs, searchDocs, openJobs, monthSummary,
   listStock, stockValue, recentExpenses, monthExpenses, monthlyTrend,
-  recentLeads, monthLeads,
+  recentLeads, monthLeads, orderSheetByToken, monthOrders, recentOrders,
 } from './db.js';
 import { renderDoc } from './render.js';
+import { renderOrderSheet } from './order-sheet.js';
 import { renderAdmin, TABS } from './admin.js';
 import { todayBkk, monthBkk, lastMonths } from './thai.js';
 
@@ -62,8 +63,15 @@ async function handleDoc(url, env) {
   const token = url.pathname.slice('/d/'.length);
   if (!TOKEN_RE.test(token)) return html('<p>ไม่พบเอกสาร</p>', 404);
   const row = await docByToken(env.DB, token);
-  if (!row) return html('<p>ไม่พบเอกสาร</p>', 404);
-  return html(renderDoc(row));
+  if (row) return html(renderDoc(row));
+
+  // ไม่ใช่เอกสาร อาจเป็นหน้าตารางออเดอร์ของเดือน — ใช้ /d/ เดียวกันเพราะ route ผูกไว้แล้ว
+  // และ token ทั้งสองแบบสุ่มจากที่เดียวกัน ชนกันไม่ได้ในทางปฏิบัติ
+  const sheet = await orderSheetByToken(env.DB, token);
+  if (!sheet) return html('<p>ไม่พบเอกสาร</p>', 404);
+  return html(renderOrderSheet({
+    ym: sheet.ym, rows: await monthOrders(env.DB, sheet.ym), today: todayBkk(),
+  }));
 }
 
 async function handleAdmin(url, env) {
@@ -81,7 +89,7 @@ async function handleAdmin(url, env) {
   // กราฟย้อนหลังครึ่งปี — พอเห็นแนวโน้ม แต่ยังไม่ล้นจอมือถือ
   const months = lastMonths(ym, 6);
 
-  const [jobs, docs, summary, stock, stockVal, expenses, monthExp, raw, leads, monthLead] = await Promise.all([
+  const [jobs, docs, summary, stock, stockVal, expenses, monthExp, raw, leads, monthLead, orders, monthOrd] = await Promise.all([
     needJobs ? openJobs(env.DB) : [],
     tab === 'docs' ? (q ? searchDocs(env.DB, q, 50) : recentDocs(env.DB, 50)) : [],
     tab === 'summary' ? monthSummary(env.DB, ym) : null,
@@ -92,6 +100,8 @@ async function handleAdmin(url, env) {
     tab === 'summary' ? monthlyTrend(env.DB, months[0]) : null,
     tab === 'leads' ? recentLeads(env.DB, { limit: 50 }) : [],
     tab === 'leads' ? monthLeads(env.DB, ym) : [],
+    tab === 'orders' ? recentOrders(env.DB, 100) : [],
+    tab === 'orders' ? monthOrders(env.DB, ym) : [],
   ]);
 
   // เดือนที่ไม่มีรายการต้องมีแท่งเป็น 0 ไม่ใช่หายไปจากกราฟ ไม่งั้นแกนเวลาจะโกหก
@@ -102,6 +112,7 @@ async function handleAdmin(url, env) {
 
   return html(renderAdmin({
     tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend, leads, monthLead,
+    orders, monthOrd,
   }));
 }
 

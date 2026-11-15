@@ -130,6 +130,29 @@ export const STOCK_ALLOW_NEGATIVE = true;
 // หมวดรายจ่าย — ต้องตรงกับ CHECK ของ expenses.category ใน migration 0003
 export const EXPENSE_CATEGORIES = ['ค่าวัสดุ', 'ค่าส่ง', 'ค่าแรง', 'อื่นๆ'];
 
+// ---------- ออเดอร์โบว์ ----------
+// ช่องทางที่ลูกค้าสั่ง — ชื่อที่เก็บลงตาราง กับคำที่คนพิมพ์จริงซึ่งต้องแปลงมาเป็นชื่อนั้น
+// ไม่มี CHECK ในฐานข้อมูลโดยตั้งใจ: ช่องทางใหม่ (เช่น TikTok) พิมพ์มาก็เก็บตามที่พิมพ์
+// ดีกว่าปฏิเสธออเดอร์ทั้งรายการเพราะช่องทางไม่อยู่ในรายชื่อ
+export const ORDER_CHANNELS = ['Line', 'FB', 'Shop', 'Live'];
+const ORDER_CHANNEL_WORDS = {
+  Line: ['line', 'ไลน์', 'ไลน'],
+  FB:   ['fb', 'facebook', 'เฟส', 'เฟสบุ๊ก', 'เฟสบุ๊ค', 'เฟซบุ๊ก', 'เฟซบุ๊ค', 'เพจ', 'inbox', 'อินบ็อกซ์'],
+  Shop: ['shop', 'shopee', 'ช้อป', 'ช็อป', 'ช้อปปี้', 'ช็อปปี้', 'หน้าร้าน'],
+  Live: ['live', 'ไลฟ์', 'ไลฟ์สด', 'ไลฟ'],
+};
+
+/** "ทางไลน์" / "LINE" / "เฟส" -> ชื่อมาตรฐาน; ไม่รู้จักคืนตามที่พิมพ์; ว่างคืน null */
+export function normalizeChannel(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const key = raw.toLowerCase().replace(/^(ทาง|ช่องทาง|จาก|ผ่าน)\s*/u, '').replace(/\s+/g, '');
+  for (const name of ORDER_CHANNELS) {
+    if (ORDER_CHANNEL_WORDS[name].includes(key)) return name;
+  }
+  return raw.replace(/^(ทาง|ช่องทาง|จาก|ผ่าน)\s*/u, '') || null;
+}
+
 export const PENDING_TTL_MS = 15 * 60 * 1000;   // รายการรอยืนยันหมดอายุ 15 นาที
 
 // ---------- ลูกค้ามุ่งหวัง ----------

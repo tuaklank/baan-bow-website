@@ -376,6 +376,105 @@ export async function jobExpenses(db, jobId) {
   return results;
 }
 
+// ---------- ออเดอร์โบว์ ----------
+const ORDER_FIELDS = ['order_date', 'style', 'channel', 'detail', 'customer', 'price', 'paid_at', 'wage', 'wage_paid_at'];
+
+export async function addOrder(db, o) {
+  const res = await db.prepare(`
+    INSERT INTO bow_orders (order_date, style, channel, detail, customer, price, wage)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null, o.wage ?? null).run();
+  return orderById(db, res.meta.last_row_id);
+}
+
+/**
+ * จดโบว์แบบเดียวกันทีละหลายชิ้น — ชิ้นละแถว เลขเรียงติดกัน คืนเลขแรกและเลขสุดท้าย
+ * ใช้คำสั่งเดียวต่อหนึ่งแบบ ไม่วนจดทีละแถว เพราะสั่งมาทีเป็นสิบๆ ชิ้น
+ * ถ้าวนทีละแถวจะชนเพดานจำนวนคำสั่งฐานข้อมูลต่อหนึ่งข้อความของ Cloudflare
+ */
+export async function addOrders(db, o, qty) {
+  const res = await db.prepare(`
+    INSERT INTO bow_orders (order_date, style, channel, detail, customer, price, wage)
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+    SELECT ?,?,?,?,?,?,? FROM n
+  `).bind(qty, o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null, o.wage ?? null).run();
+  const last = res.meta.last_row_id;
+  return { first: last - qty + 1, last };
+}
+
+export const orderById = (db, id) =>
+  db.prepare('SELECT * FROM bow_orders WHERE id = ?').bind(id).first();
+
+/**
+ * แก้ออเดอร์ทับแถวเดิม — ต่างจากรายจ่ายที่ยกเลิกแล้วลงใหม่ เพราะเลขออเดอร์ต้องคงเดิม
+ * เจ้าของร้านอ้าง "ออเดอร์ 24" ซ้ำหลายรอบเพื่อเติมทีละช่อง ถ้าเลขเปลี่ยนทุกครั้งจะตามไม่ได้
+ * ประวัติว่าเคยเป็นอะไรมาก่อนเก็บใน bow_order_events แทน
+ * changes ใส่เฉพาะช่องที่จะแก้ ช่องที่ไม่ใส่คงค่าเดิม; คืน null ถ้าไม่มีแถวหรือถูกยกเลิกแล้ว
+ */
+export async function updateOrder(db, id, changes, eventText) {
+  const keys = ORDER_FIELDS.filter((k) => changes[k] !== undefined);
+  if (!keys.length) return orderById(db, id);
+  const res = await db.prepare(`
+    UPDATE bow_orders SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now')
+    WHERE id = ? AND status = 'recorded'
+  `).bind(...keys.map((k) => changes[k]), id).run();
+  if (!res.meta.changes) return null;
+  await db.prepare('INSERT INTO bow_order_events (order_id, text) VALUES (?, ?)')
+    .bind(id, eventText || 'แก้ไข').run();
+  return orderById(db, id);
+}
+
+/** ลบออเดอร์ = ยกเลิก ไม่ลบแถว เหมือนทุกตารางในระบบ; คืน false ถ้ายกเลิกไปแล้ว */
+export async function voidOrder(db, id, reason) {
+  const res = await db.prepare(`
+    UPDATE bow_orders SET status = 'void', void_reason = ?, voided_at = datetime('now'),
+                          updated_at = datetime('now')
+    WHERE id = ? AND status = 'recorded'
+  `).bind(reason ?? null, id).run();
+  if (res.meta.changes > 0) {
+    await db.prepare('INSERT INTO bow_order_events (order_id, text) VALUES (?, ?)')
+      .bind(id, 'ยกเลิก' + (reason ? ` — ${reason}` : '')).run();
+  }
+  return res.meta.changes > 0;
+}
+
+export async function orderEvents(db, id) {
+  const { results } = await db.prepare(
+    'SELECT * FROM bow_order_events WHERE order_id = ? ORDER BY id',
+  ).bind(id).all();
+  return results;
+}
+
+/** ออเดอร์ของเดือน (YYYY-MM) เรียงตามวันที่แล้วตามเลข — ที่ยกเลิกแล้วไม่รวม */
+export async function monthOrders(db, ym) {
+  const { results } = await db.prepare(`
+    SELECT * FROM bow_orders WHERE status = 'recorded' AND order_date LIKE ?
+    ORDER BY order_date, id
+  `).bind(ym + '-%').all();
+  return results;
+}
+
+/** รายการล่าสุดสำหรับหน้า /admin — รวมที่ยกเลิกแล้วด้วย ให้เห็นว่าเคยจดอะไรไว้ (เหมือน recentExpenses) */
+export async function recentOrders(db, limit = 50) {
+  const { results } = await db.prepare(
+    'SELECT * FROM bow_orders ORDER BY order_date DESC, id DESC LIMIT ?',
+  ).bind(limit).all();
+  return results;
+}
+
+/**
+ * token ของหน้าตารางออเดอร์เดือนนั้น — มีอยู่แล้วใช้ตัวเดิม ไม่มีสร้างใหม่
+ * ลิงก์ของเดือนเดียวกันจึงเหมือนเดิมทุกครั้ง เปิดค้างไว้แล้วกดรีเฟรชก็เห็นออเดอร์ล่าสุด
+ */
+export async function orderSheetToken(db, ym) {
+  await db.prepare('INSERT OR IGNORE INTO order_sheets (ym, token) VALUES (?, ?)')
+    .bind(ym, newToken()).run();
+  return (await db.prepare('SELECT token FROM order_sheets WHERE ym = ?').bind(ym).first()).token;
+}
+
+export const orderSheetByToken = (db, token) =>
+  db.prepare('SELECT * FROM order_sheets WHERE token = ?').bind(token).first();
+
 /** ตัดสต๊อกของงานนี้ไปแล้วหรือยัง — กันกดส่งของซ้ำแล้วสต๊อกหายสองเท่า */
 export async function stockMovesOfJob(db, jobId) {
   const { results } = await db.prepare(
