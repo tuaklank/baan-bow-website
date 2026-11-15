@@ -654,10 +654,62 @@ test('ย้อนกลับ: จดผิดหลายชิ้น -> แ�
   assert.ok(a.includes('ย้อนกลับแล้ว: จดออเดอร์ #3–#17 (15 ชิ้น)'), a);
   assert.deepEqual((await monthOrders(db, monthBkk())).map((r) => r.id), [1, 2]);
 
-  // ย้อนได้ครั้งเดียว — ครั้งที่สองต้องไม่ไปลบของที่จดถูกไว้ก่อนหน้า
-  const b = await handleText(e, 'U1', 'ย้อนกลับ');
-  assert.ok(b.includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับ'));
-  assert.equal((await monthOrders(db, monthBkk())).length, 2);
+  assert.ok(a.includes('พิมพ์ "ย้อนกลับ" อีกครั้ง = ย้อน: จดออเดอร์ #1 #2'), 'ต้องบอกว่าย้อนครั้งถัดไปจะโดนอะไร');
+});
+
+test('ย้อนกลับทีละคำสั่งได้หลายขั้น ย้อนเกินแล้วเดินหน้ากลับมาจุดเดิมได้', async () => {
+  const db = freshDb();
+  const e = env(db);
+  const state = async () => (await monthOrders(db, monthBkk())).map((r) => [r.id, r.customer, r.price, Boolean(r.paid_at)]);
+
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3 }), 'U1');                     // 1 จด
+  const s1 = await state();
+  await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง คุณเอ ราคา 2900');                    // 2 แก้
+  const s2 = await state();
+  await handleText(e, 'U1', 'ออเดอร์ 1-2 จ่ายแล้ว');                                // 3 ติ๊ก
+  const s3 = await state();
+  await handleText(e, 'U1', 'ลบออเดอร์ 3');
+  await handleText(e, 'U1', 'ยืนยัน');                                              // 4 ลบ
+  const s4 = await state();
+  assert.equal(s4.length, 2);
+
+  // ถอยสามขั้น: ลบ -> ติ๊ก -> แก้
+  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('ย้อนกลับแล้ว: ลบออเดอร์ #3'));
+  assert.deepEqual(await state(), s3);
+  assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('ย้อนกลับแล้ว: แก้ออเดอร์ #1 #2'));
+  assert.deepEqual(await state(), s2);
+  await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.deepEqual(await state(), s1);
+
+  // ย้อนเกินไปสองขั้น — เดินหน้ากลับมา
+  assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('เดินหน้าแล้ว: แก้ออเดอร์ #1'));
+  assert.deepEqual(await state(), s2);
+  const f = await handleText(e, 'U1', 'เดินหน้า');
+  assert.ok(f.includes('เดินหน้าแล้ว: แก้ออเดอร์ #1 #2') && f.includes('เดินหน้าได้อีก 1 ครั้ง'));
+  assert.deepEqual(await state(), s3);
+  assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('กลับมาถึงจุดล่าสุดแล้ว'));
+  assert.deepEqual(await state(), s4);
+  assert.equal((await orderById(db, 3)).status, 'void');
+  assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('ไม่มีอะไรให้เดินหน้า'));
+
+  // ถอยจนสุด: แถวที่จดมาหายหมด แล้วย้อนต่อไม่ได้ แต่บอกว่าเดินหน้าได้
+  for (let i = 0; i < 4; i++) await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.equal((await state()).length, 0);
+  const end = await handleText(e, 'U1', 'ย้อนกลับ');
+  assert.ok(end.includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับแล้ว') && end.includes('"เดินหน้า" ได้อีก 4 ครั้ง'));
+  await handleText(e, 'U1', 'เดินหน้า');
+  assert.deepEqual(await state(), s1, 'เดินหน้าหลังย้อนการจด ต้องได้แถวเลขเดิมกลับมา ไม่ใช่แถวใหม่');
+});
+
+test('สั่งคำสั่งออเดอร์ใหม่หลังย้อนกลับ: เดินหน้าไปทางเดิมไม่ได้แล้ว', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 2 }), 'U1');
+  await handleText(e, 'U1', 'ออเดอร์ 1 ราคา 99');
+  await handleText(e, 'U1', 'ย้อนกลับ');
+  await handleText(e, 'U1', 'ออเดอร์ 1 ราคา 2900');                                  // ทางใหม่
+  assert.ok((await handleText(e, 'U1', 'เดินหน้า')).includes('ไม่มีอะไรให้เดินหน้า'));
+  assert.equal((await orderById(db, 1)).price, 290000, 'ราคา 99 ที่ย้อนทิ้งไปต้องไม่โผล่กลับมา');
 });
 
 test('ย้อนกลับ: แก้ผิด -> ทุกช่องกลับเป็นค่าเดิม รวมติ๊กจ่าย', async () => {
@@ -699,6 +751,7 @@ test('ย้อนกลับเป็นของใครของมัน �
   await handleText(e, 'U1', 'ตารางออเดอร์');
   await handleText(e, 'U1', 'ออเดอร์ ว่าง');
   assert.ok((await handleText(e, 'U2', 'ย้อนกลับ')).includes('ไม่มีคำสั่งออเดอร์ให้ย้อนกลับ'));
+  assert.ok((await handleText(e, 'U2', 'เดินหน้า')).includes('ไม่มีอะไรให้เดินหน้า'));
   assert.ok((await handleText(e, 'U1', 'ย้อนกลับ')).includes('จดออเดอร์ #1 #2'));
   assert.equal((await monthOrders(db, monthBkk())).length, 0);
 });

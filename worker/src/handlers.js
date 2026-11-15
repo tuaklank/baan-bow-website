@@ -16,7 +16,7 @@ import {
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
   addOrder, addOrders, orderById, updateOrder, voidOrder, monthOrders, orderSheetToken,
-  ordersByIds, updateOrdersBulk, saveOrderUndo, takeOrderUndo,
+  ordersByIds, updateOrdersBulk, saveOrderUndo, nextOrderUndo, markOrderUndo, orderUndoCounts,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
 import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP } from './draft.js';
@@ -78,7 +78,7 @@ export const HELP = `คำสั่งที่ใช้ได้
 • ออเดอร์ 24 จ่ายแล้ว   /   ออเดอร์ 8-12 จ่ายแล้ว              (ลูกค้าจ่าย)
 • ออเดอร์ 1-10 ค่าจ้าง 150   /   ออเดอร์ 1-10 จ่ายค่าจ้างแล้ว    (ค่าจ้างทำโบว์)
 • ลบออเดอร์ 24   /   ลบออเดอร์ 9-23   (ยกเลิก ไม่ลบ ประวัติยังอยู่)
-• ย้อนกลับ                       (ยกเลิกคำสั่งออเดอร์ล่าสุด 1 ครั้ง)
+• ย้อนกลับ   /   เดินหน้า          (ย้อนคำสั่งออเดอร์ทีละคำสั่ง ย้อนเกินก็เดินหน้ากลับมาได้)
 • ตารางออเดอร์                   (ลิงก์ตาราง A4 ของเดือนนี้ เปิดดูหรือบันทึก PDF ได้)
 • วิธีสั่งออเดอร์                  (รูปแบบคำสั่งแก้ไขและเรียกดูทั้งหมด)
 
@@ -1467,26 +1467,53 @@ export async function doVoidOrders(env, uid, msg) {
 }
 
 /**
- * ย้อนกลับคำสั่งออเดอร์ล่าสุดหนึ่งครั้ง — จดผิดก็ลบแถวที่จดมา, แก้ผิดก็คืนค่าเดิม, ลบผิดก็เอากลับมา
- * ไม่ต้องยืนยัน เพราะคำสั่งนี้คือทางแก้ของการสั่งผิดอยู่แล้ว และทุกอย่างยังอยู่ในประวัติ
+ * ย้อนกลับคำสั่งออเดอร์ทีละคำสั่ง จากล่าสุดถอยไป — จดผิดก็ลบแถวที่จดมา, แก้ผิดก็คืนค่าเดิม, ลบผิดก็เอากลับมา
+ * พิมพ์ซ้ำ = ถอยอีกหนึ่งคำสั่ง (เก็บไว้ ORDER_UNDO_DEPTH คำสั่ง) ถอยเกินพิมพ์ "เดินหน้า" กลับมาได้
+ * ไม่ต้องยืนยัน เพราะคำสั่งนี้คือทางแก้ของการสั่งผิดอยู่แล้ว และย้อนเกินก็เดินหน้าคืนได้
  * แถวที่จดผิดถูก "ยกเลิก" ไม่ถูกลบจริง (หลักเดียวกับทั้งระบบ) เลขออเดอร์จึงไม่ถูกนำกลับมาออกใหม่
  */
 export async function doUndoOrder(env, uid) {
   const db = env.DB;
-  const u = await takeOrderUndo(db, uid);
-  if (!u) return 'ไม่มีคำสั่งออเดอร์ให้ย้อนกลับครับ\nย้อนได้ครั้งเดียว เฉพาะคำสั่งออเดอร์ล่าสุด (จด แก้ ลบ)';
+  const u = await nextOrderUndo(db, uid, 'undo');
+  if (!u) {
+    const { redo } = await orderUndoCounts(db, uid);
+    return 'ไม่มีคำสั่งออเดอร์ให้ย้อนกลับแล้วครับ'
+      + (redo ? `\nย้อนเกินไป พิมพ์ "เดินหน้า" ได้อีก ${redo} ครั้ง` : '');
+  }
+
+  // จำสภาพตอนนี้ของทุกแถวที่คำสั่งนั้นแตะไว้ก่อน — "เดินหน้า" จะคืนสภาพนี้
+  const ids = [...(u.created ?? []), ...(u.before ?? []).map((r) => r.id)];
+  const after = await ordersByIds(db, ids);
 
   const voided_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const items = [
+  await updateOrdersBulk(db, [
     ...(u.created ?? []).map((id) => ({
       id, changes: { status: 'void', void_reason: 'ย้อนกลับ', voided_at }, text: 'ย้อนกลับ — ยกเลิกแถวที่จดมา',
     })),
     // คืนทั้งแถวตามที่เป็นก่อนคำสั่งนั้น รวมสถานะด้วย (ลบผิดก็กลับมา กู้ผิดก็กลับไปถูกลบ)
     ...(u.before ?? []).map((row) => ({ id: row.id, changes: row, text: 'ย้อนกลับ — คืนค่าเดิม' })),
-  ];
-  await updateOrdersBulk(db, items, { anyStatus: true });
+  ], { anyStatus: true });
+  await markOrderUndo(db, u.id, 'undone', { created: u.created, before: u.before, after });
+
+  const next = await nextOrderUndo(db, uid, 'undo');
   return `↩️ ย้อนกลับแล้ว: ${u.label}`
-    + (u.created?.length ? '\nแถวที่จดมาถูกลบออกจากตารางแล้ว (เลขชุดนั้นจะไม่ถูกใช้ซ้ำ)' : '');
+    + (next ? `\nพิมพ์ "ย้อนกลับ" อีกครั้ง = ย้อน: ${next.label}` : '\nย้อนต่อไม่ได้แล้ว (ถึงคำสั่งแรกที่จำไว้)')
+    + '\nย้อนเกิน พิมพ์ "เดินหน้า"';
+}
+
+/** เดินหน้า = ทำคำสั่งที่เพิ่งย้อนไปกลับมาเหมือนเดิม ทีละคำสั่ง เรียงจากตัวที่ถูกย้อนหลังสุดกลับไป */
+export async function doRedoOrder(env, uid) {
+  const db = env.DB;
+  const u = await nextOrderUndo(db, uid, 'redo');
+  if (!u) return 'ไม่มีอะไรให้เดินหน้าครับ\nเดินหน้าได้เฉพาะหลังพิมพ์ "ย้อนกลับ" และยังไม่ได้สั่งคำสั่งออเดอร์ใหม่';
+
+  await updateOrdersBulk(db, (u.after ?? []).map((row) => ({ id: row.id, changes: row, text: 'เดินหน้า — ทำคำสั่งที่ย้อนไปอีกครั้ง' })),
+    { anyStatus: true });
+  await markOrderUndo(db, u.id, 'done');
+
+  const { redo } = await orderUndoCounts(db, uid);
+  return `↪️ เดินหน้าแล้ว: ${u.label}`
+    + (redo ? `\nเดินหน้าได้อีก ${redo} ครั้ง` : '\nกลับมาถึงจุดล่าสุดแล้ว');
 }
 
 // ---------- ยืนยัน ----------
@@ -1632,6 +1659,7 @@ export async function handleText(env, uid, text, ctx = null) {
   // เรียงจากเรียกดู -> ติ๊กจ่าย -> แก้ช่อง; ที่ไม่เข้าแพตเทิร์นไหลไปให้ AI อ่านตามเดิม
   if (/^(วิธีสั่งออเดอร์|วิธีแก้ออเดอร์|คู่มือออเดอร์|คำสั่งออเดอร์|ช่วยออเดอร์|ออเดอร์\s*\?)$/.test(msg)) return ORDER_HELP;
   if (/^(ย้อนกลับ|ย้อน|undo|back)(\s*(ครับ|ค่ะ|คะ))?$/i.test(msg)) return doUndoOrder(env, uid);
+  if (/^(เดินหน้า|ไปข้างหน้า|ทำซ้ำ|redo|forward)(\s*(ครับ|ค่ะ|คะ))?$/i.test(msg)) return doRedoOrder(env, uid);
   if (/ออเดอร์/.test(msg)) {
     const orderAnswer = (await doViewOrders(env, msg)) ?? (await doVoidOrders(env, uid, msg))
       ?? (await doMarkPaid(env, msg, uid)) ?? (await doOrderFields(env, msg, uid));

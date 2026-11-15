@@ -635,22 +635,50 @@ export async function updateOrdersBulk(db, items, { anyStatus = false } = {}) {
   }
 }
 
-// ---------- ออเดอร์โบว์: ย้อนกลับ ----------
-// เก็บสภาพก่อนคำสั่งออเดอร์ล่าสุดของผู้ใช้ไว้ชุดเดียว พิมพ์ "ย้อนกลับ" แล้วคืนสภาพนั้น
-// ชุดเดียวพอ เพราะตั้งใจให้ย้อนได้ครั้งเดียว — ย้อนหลายชั้นแล้วเจ้าของร้านจะตามไม่ทันว่าตอนนี้อยู่ตรงไหน
-// payload = { created: [เลขที่คำสั่งนั้นจดขึ้นมาใหม่], before: [แถวเดิมทั้งแถวก่อนถูกแก้/ลบ] }
+// ---------- ออเดอร์โบว์: ย้อนกลับ / เดินหน้า ----------
+// เก็บคำสั่งออเดอร์ของผู้ใช้เรียงกันเป็นแถว (ดู migration 0007) ย้อนได้ทีละคำสั่งจากล่าสุดถอยไป
+// และเดินหน้ากลับมาได้ถ้าย้อนเกิน — เหมือน Undo/Redo ในโปรแกรมทั่วไป
+// payload = { created: [เลขที่จดขึ้นมาใหม่], before: [แถวเดิมก่อนถูกแก้/ลบ], after: [แถวตอนถูกย้อน] }
+export const ORDER_UNDO_DEPTH = 20;   // เก็บย้อนหลังได้เท่านี้คำสั่งต่อคน เก่ากว่านั้นทิ้ง
 
+/** จดคำสั่งออเดอร์ที่เพิ่งทำ — ทางเดินหน้าเดิม (ที่เคยย้อนไว้) ใช้ไม่ได้แล้ว จึงทิ้ง */
 export async function saveOrderUndo(db, uid, label, payload) {
+  await db.prepare("DELETE FROM order_undo WHERE user_id = ? AND state = 'undone'").bind(uid).run();
+  await db.prepare('INSERT INTO order_undo (user_id, label, payload) VALUES (?, ?, ?)')
+    .bind(uid, label, JSON.stringify(payload)).run();
   await db.prepare(`
-    INSERT INTO order_undo (user_id, label, payload, created_at) VALUES (?, ?, ?, datetime('now'))
-    ON CONFLICT (user_id) DO UPDATE SET label = excluded.label, payload = excluded.payload, created_at = excluded.created_at
-  `).bind(uid, label, JSON.stringify(payload)).run();
+    DELETE FROM order_undo WHERE user_id = ? AND id NOT IN (
+      SELECT id FROM order_undo WHERE user_id = ? ORDER BY id DESC LIMIT ?
+    )
+  `).bind(uid, uid, ORDER_UNDO_DEPTH).run();
 }
 
-/** หยิบชุดย้อนกลับออกมาแล้วลบทิ้ง — ย้อนได้ครั้งเดียว; ไม่มีคืน null */
-export async function takeOrderUndo(db, uid) {
-  const row = await db.prepare('SELECT label, payload FROM order_undo WHERE user_id = ?').bind(uid).first();
-  if (!row) return null;
-  await db.prepare('DELETE FROM order_undo WHERE user_id = ?').bind(uid).run();
-  return { label: row.label, ...JSON.parse(row.payload) };
+/**
+ * คำสั่งถัดไปที่จะย้อน (dir = 'undo': ตัวล่าสุดที่ยังมีผล) หรือจะเดินหน้า (dir = 'redo': ตัวเก่าสุดที่ถูกย้อน)
+ * คืน { id, label, created, before, after } หรือ null ถ้าไม่มีแล้ว
+ */
+export async function nextOrderUndo(db, uid, dir) {
+  const row = await db.prepare(dir === 'undo'
+    ? "SELECT id, label, payload FROM order_undo WHERE user_id = ? AND state = 'done' ORDER BY id DESC LIMIT 1"
+    : "SELECT id, label, payload FROM order_undo WHERE user_id = ? AND state = 'undone' ORDER BY id ASC LIMIT 1",
+  ).bind(uid).first();
+  return row ? { id: row.id, label: row.label, ...JSON.parse(row.payload) } : null;
+}
+
+/** เปลี่ยนสถานะคำสั่งหลังย้อน/เดินหน้า — payload ใส่มาเมื่อต้องจำสภาพ after เพิ่ม */
+export async function markOrderUndo(db, id, state, payload = null) {
+  if (payload) {
+    await db.prepare('UPDATE order_undo SET state = ?, payload = ? WHERE id = ?').bind(state, JSON.stringify(payload), id).run();
+  } else {
+    await db.prepare('UPDATE order_undo SET state = ? WHERE id = ?').bind(state, id).run();
+  }
+}
+
+/** เหลือให้ย้อน (done) และให้เดินหน้า (undone) อีกกี่คำสั่ง */
+export async function orderUndoCounts(db, uid) {
+  const { results } = await db.prepare(
+    'SELECT state, COUNT(*) AS n FROM order_undo WHERE user_id = ? GROUP BY state',
+  ).bind(uid).all();
+  const of = (s) => results.find((r) => r.state === s)?.n ?? 0;
+  return { undo: of('done'), redo: of('undone') };
 }
