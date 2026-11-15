@@ -22,7 +22,7 @@ import { huntLead } from './leads.js';
 import { push } from './line.js';
 import {
   todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
-  thaiDate, thaiMonth, fmtBaht,
+  thaiDate, thaiDateNum, dayMonth, thaiMonth, fmtBaht,
 } from './thai.js';
 
 const QT_VALID_DAYS = 15;   // ใบเสนอราคายืนราคา 15 วันนับจากวันที่ออก
@@ -167,11 +167,35 @@ function docSummary(d) {
   return parts.filter((x) => x !== null).join('\n');
 }
 
+/** ยาวที่สุดที่ยังจบในบรรทัดเดียวบนมือถือ เกินนี้ไลน์จะตัดขึ้นบรรทัดใหม่เอง */
+const JOB_LINE_MAX = 42;
+const JOB_STATUS_DEFAULT = 'รอดำเนินการ';
+
+/** ตัดชื่องานให้จบในบรรทัดเดียว ตัดตรงช่องว่างถ้าพอมี จะได้ไม่ขาดกลางคำ */
+function clipTitle(text, max) {
+  const t = String(text ?? '').trim();
+  if (t.length <= max) return t;
+  if (max < 4) return t.slice(0, Math.max(1, max));
+  const cut = t.slice(0, max - 1);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > max * 0.6 ? cut.slice(0, sp) : cut.trimEnd()) + '…';
+}
+
+/**
+ * รายการงานค้าง งานละหนึ่งบรรทัด ด่วนก่อนตามลำดับที่ openJobs เรียงมาให้แล้ว
+ * ไม่พิมพ์สถานะ "รอดำเนินการ" เพราะงานค้างเกือบทั้งหมดอยู่สถานะนั้น บอกไปก็กินที่เปล่า
+ * วันที่ใช้แบบ 23/10 เพราะปีเดาได้จากบริบท และวันที่เลย/ครบวันนี้แทนด้วยอีโมจิแทนคำ
+ */
 export function jobListText(rows, today, heading) {
   if (!rows.length) return 'ไม่มีงานค้าง 🎉';
   const body = rows.map((r) => {
-    const tag = !r.due_date ? '' : r.due_date < today ? ' ❗เลยกำหนด' : r.due_date === today ? ' ⏰ครบวันนี้' : '';
-    return `#${r.id} ${r.title} [${r.status}] ${r.due_date ? thaiDate(r.due_date) : 'ไม่มีกำหนด'}${tag}`;
+    const due = !r.due_date ? 'ไม่มีกำหนด'
+      : r.due_date < today ? `❗${dayMonth(r.due_date)}`
+      : r.due_date === today ? '⏰วันนี้'
+      : dayMonth(r.due_date);
+    const head = `📌 #${r.id} `;
+    const tail = `${r.status && r.status !== JOB_STATUS_DEFAULT ? ` ·${r.status}` : ''} ${due}`;
+    return head + clipTitle(r.title, JOB_LINE_MAX - head.length - tail.length) + tail;
   }).join('\n');
   return `${heading}\n${body}`;
 }
@@ -1170,7 +1194,7 @@ export async function handleText(env, uid, text, ctx = null) {
     case 'edit_expense':  return doEditExpense(env, uid, cmd);
     case 'job_from_doc':  return doJobFromDoc(env, cmd);
     case 'update_job':    return doUpdateJob(env, cmd);
-    case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `🛠 งานค้าง (${thaiDate(todayBkk(), true)})`);
+    case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `งานค้าง ${thaiDateNum(todayBkk())}`);
     case 'search':        return doSearch(env, cmd);
     case 'month_summary': return doMonthSummary(env);
     case 'add_holiday':   return doAddHoliday(env, cmd);
@@ -1183,7 +1207,7 @@ export async function morningDigest(env) {
   const today = todayBkk();
   const rows = await openJobs(env.DB, addDays(today, 1));
   if (!rows.length) return null;
-  return '🔔 ' + jobListText(rows, today, `งานที่ต้องดู (${thaiDate(today, true)})`);
+  return jobListText(rows, today, `งานที่ต้องดู ${thaiDateNum(today)}`);
 }
 
 /**
@@ -1196,15 +1220,8 @@ export async function eveningDigest(env) {
   const rows = await openJobs(env.DB);
   if (!rows.length) return null;
 
-  const late = rows.filter((j) => j.due_date && j.due_date < today).length;
-  const due = rows.filter((j) => j.due_date === today).length;
-  const head = [
-    `สรุปงานค้างเย็นนี้ (${thaiDate(today, true)})`,
-    late ? `❗ เลยกำหนด ${late} งาน` : null,
-    due ? `⏰ ครบกำหนดวันนี้ ${due} งาน` : null,
-  ].filter(Boolean).join('\n');
-
-  return '🌆 ' + jobListText(rows, today, head)
-    + '\n\nงานไหนเสร็จแล้วพิมพ์ปิดได้เลย เช่น "งาน ' + rows[0].id + ' เสร็จแล้ว"';
+  // ไม่สรุปจำนวนงานเลยกำหนด/ครบวันนี้ไว้หัวข้ออีก เพราะทุกบรรทัดติด ❗/⏰ อยู่แล้ว เห็นเองได้
+  return jobListText(rows, today, `สรุปงาน ${thaiDateNum(today)}`)
+    + `\n\nเสร็จแล้วพิมพ์ "งาน ${rows[0].id} เสร็จแล้ว"`;
 }
 

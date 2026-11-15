@@ -232,3 +232,15 @@ export function bahtTextEn(satang) {
   const s = (neg ? 'minus ' : '') + words;
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** 2026-11-15 -> "15/11/69" — หัวข้อสรุปงานในไลน์ ที่ต้องสั้นที่สุด */
+export function thaiDateNum(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return `${d}/${m}/${String((y + 543) % 100).padStart(2, '0')}`;
+}
+
+/** 2026-10-23 -> "23/10" — วันครบกำหนดท้ายบรรทัดรายการงาน ปีละไว้ในฐานที่เข้าใจ */
+export function dayMonth(ymd) {
+  const [, m, d] = ymd.split('-').map(Number);
+  return `${d}/${m}`;
+}

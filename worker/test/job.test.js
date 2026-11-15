@@ -6,6 +6,7 @@ import {
   JOB_STATUSES, JOB_OPEN_SQL,
 } from '../src/config.js';
 import { addDays, todayBkk, dayOfWeek } from '../src/thai.js';
+import { jobListText } from '../src/handlers.js';
 
 test('ไม่ระบุกำหนดส่ง ใช้ 4 วันนับจากวันเปิดงาน', () => {
   assert.equal(JOB_DEFAULT_DUE_DAYS, 4);
@@ -57,4 +58,28 @@ test('กำหนดส่ง 4 วันจากวันศุกร์ ต�
   assert.equal(dayOfWeek('2026-10-23'), 5);
   assert.equal(addDays('2026-10-23', 4), '2026-10-27');
   assert.equal(dayOfWeek('2026-10-27'), 2);
+});
+
+// สรุปงานในไลน์ต้องอ่านจบในบรรทัดเดียวต่อหนึ่งงาน ไม่งั้นรายการยาวจนเลื่อนหา
+test('รายการงานค้าง งานละหนึ่งบรรทัด ไม่เกินความยาวที่จอมือถืออ่านจบ', () => {
+  const today = '2026-11-15';
+  const rows = [
+    { id: 3,  title: 'โบว์ดอกไม้ 1 ชิ้น คุณสอง', status: 'รอดำเนินการ', due_date: '2026-10-23' },
+    { id: 9,  title: 'โบว์ผ้าซับในขนาด 1 เมตร', status: 'รอดำเนินการ', due_date: '2026-11-15' },
+    { id: 10, title: 'โบว์ดอกไม้ สี่ชิ้น โบว์แบบที่หนึ่งและแบบที่สองสองชิ้น', status: 'กำลังทำ', due_date: '2026-11-18' },
+    { id: 12, title: 'โบว์ติดรถ', status: 'รอดำเนินการ', due_date: null },
+  ];
+  const lines = jobListText(rows, today, 'สรุปงาน 15/11/69').split('\n');
+
+  assert.equal(lines.length, rows.length + 1);            // หัวข้อ + งานละบรรทัด
+  assert.equal(lines[0], 'สรุปงาน 15/11/69');
+  for (const l of lines.slice(1)) {
+    assert.ok(l.startsWith('📌 #'), l);
+    assert.ok(l.length <= 42, `ยาวเกินหนึ่งบรรทัด: ${l}`);
+  }
+  assert.ok(lines[1].includes('❗23/10'));                 // เลยกำหนด บอกด้วยอีโมจิ ไม่ใช่คำ
+  assert.ok(lines[2].includes('⏰วันนี้'));
+  assert.ok(lines[3].includes('กำลังทำ'));                 // สถานะที่ไม่ปกติยังต้องเห็น
+  assert.ok(!lines[4].includes('รอดำเนินการ'));            // สถานะปกติไม่ต้องพิมพ์ กินที่เปล่า
+  assert.ok(lines[4].includes('ไม่มีกำหนด'));
 });
