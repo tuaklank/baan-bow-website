@@ -586,3 +586,48 @@ export async function productsByKeys(db, keys) {
   ).bind(...keys).all();
   return results;
 }
+
+// ---------- ออเดอร์โบว์: แก้ทีละหลายชิ้น ----------
+// "ออเดอร์ 1-30 ค่าจ้าง 150" แตะสามสิบแถวในข้อความเดียว ถ้าวนอ่าน-แก้-จดประวัติทีละแถว
+// จะชนเพดานจำนวนคำสั่งฐานข้อมูลต่อหนึ่งข้อความของ Cloudflare จึงรวมเป็นไม่กี่คำสั่ง
+const ORDER_CHUNK = 40;   // D1 รับตัวแปรได้ 100 ตัวต่อคำสั่ง — ประวัติใช้ 2 ตัวต่อแถว
+const chunksOf = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
+
+/** อ่านหลายออเดอร์ในคำสั่งเดียว (รวมที่ยกเลิกแล้ว ให้ผู้เรียกแยกเอง) */
+export async function ordersByIds(db, ids) {
+  const out = [];
+  for (const part of chunksOf(ids, 90)) {
+    const { results } = await db.prepare(
+      `SELECT * FROM bow_orders WHERE id IN (${part.map(() => '?').join(',')})`,
+    ).bind(...part).all();
+    out.push(...results);
+  }
+  return out;
+}
+
+/**
+ * แก้หลายออเดอร์พร้อมกัน — items = [{id, changes, text}] โดย text คือบรรทัดประวัติของแถวนั้น
+ * แถวที่แก้เหมือนกันรวมเป็น UPDATE เดียว (ปกติทั้งชุดแก้เหมือนกันหมด จึงเหลือคำสั่งเดียว)
+ * แก้เฉพาะแถวที่ยังไม่ถูกยกเลิก เหมือน updateOrder
+ */
+export async function updateOrdersBulk(db, items) {
+  const groups = new Map();
+  for (const it of items) {
+    const keys = ORDER_FIELDS.filter((k) => it.changes[k] !== undefined);
+    if (!keys.length) continue;
+    const sig = JSON.stringify(keys.map((k) => [k, it.changes[k]]));
+    if (!groups.has(sig)) groups.set(sig, { keys, changes: it.changes, rows: [] });
+    groups.get(sig).rows.push(it);
+  }
+  for (const g of groups.values()) {
+    for (const part of chunksOf(g.rows, ORDER_CHUNK)) {
+      await db.prepare(`
+        UPDATE bow_orders SET ${g.keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now')
+        WHERE status = 'recorded' AND id IN (${part.map(() => '?').join(',')})
+      `).bind(...g.keys.map((k) => g.changes[k]), ...part.map((r) => r.id)).run();
+      await db.prepare(
+        `INSERT INTO bow_order_events (order_id, text) VALUES ${part.map(() => '(?, ?)').join(', ')}`,
+      ).bind(...part.flatMap((r) => [r.id, r.text || 'แก้ไข'])).run();
+    }
+  }
+}

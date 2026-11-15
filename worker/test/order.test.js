@@ -9,7 +9,7 @@ import {
   monthOrders, recentOrders, orderSheetToken, orderSheetByToken,
 } from '../src/db.js';
 import { normalizeChannel } from '../src/config.js';
-import { handleText, doAddOrder, doEditOrder, doVoidOrder, doMarkPaid } from '../src/handlers.js';
+import { handleText, doAddOrder, doEditOrder, doVoidOrder, doMarkPaid, doOrderFields, doViewOrders } from '../src/handlers.js';
 import { renderOrderSheet, summarizeOrders } from '../src/order-sheet.js';
 import { renderAdmin } from '../src/admin.js';
 import { todayBkk, monthBkk } from '../src/thai.js';
@@ -427,7 +427,7 @@ test('ใส่ค่าจ้างทำให้หลายชิ้นพ�
   await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 4, price: 3900 }));
 
   const a = await handleText(env(db), 'U1', 'ออเดอร์ 1-3 ค่าจ้าง 150');
-  assert.ok(a.includes('ใส่ค่าจ้างทำชิ้นละ 150.00 3 ออเดอร์: #1 #2 #3'));
+  assert.ok(a.includes('ใส่ค่าจ้างทำชิ้นละ 150.00 3 ออเดอร์: #1–#3'));
   let rows = await monthOrders(db, monthBkk());
   assert.deepEqual(rows.map((r) => r.wage), [15000, 15000, 15000, null]);
   assert.ok(rows.every((r) => r.wage_paid_at == null), 'ใส่ราคาค่าจ้างเฉยๆ ยังไม่ถือว่าจ่าย');
@@ -471,4 +471,113 @@ test('แก้ค่าจ้างและติ๊กจ่ายค่า�
   assert.ok(a.includes('จ่ายค่าจ้างแล้ว: - → ✓'));
   const r = await orderById(db, 1);
   assert.deepEqual([r.wage, r.wage_paid_at, r.paid_at], [20000, todayBkk(), null]);
+});
+
+// ---------- แพตเทิร์นตายตัว: แก้ทีละช่องและเรียกดู (ไม่ผ่าน AI) ----------
+
+test('แก้ด้วยชื่อช่องนำหน้า: หลายช่องในข้อความเดียว ตอบสั้นไม่แนบลิงก์', async () => {
+  const db = freshDb();
+  await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 3 }));
+
+  const a = await handleText(env(db), 'U1', 'ออเดอร์ 2 ผู้สั่ง คุณเอ ช่องทาง ไลน์ ราคา 2,900 บาท');
+  assert.ok(a.startsWith('✅ แก้ออเดอร์ #2 แล้ว'));
+  assert.ok(a.includes('ผู้สั่ง คุณเอ · ช่องทาง Line · ราคา 2,900.00'));
+  assert.ok(!a.includes('/d/'), 'แก้แล้วไม่ต้องส่งลิงก์ตารางกลับมาทุกครั้ง');
+  assert.ok(a.split('\n').length <= 2, 'คำตอบต้องสั้น');
+
+  const r = await orderById(db, 2);
+  assert.deepEqual([r.customer, r.channel, r.price, r.style], ['คุณเอ', 'Line', 290000, 'ML']);
+  assert.equal((await orderById(db, 1)).customer, null, 'ชิ้นอื่นต้องไม่ถูกแตะ');
+});
+
+test('แก้ทีละช่อง: แบบ รายละเอียด วันที่ ค่าจ้าง และลบค่าด้วย -', async () => {
+  const db = freshDb();
+  await doAddOrder(env(db), cmdOrder({ style: 'ML', customer: 'คุณเอ' }));
+  const e = env(db);
+
+  await handleText(e, 'U1', 'ออเดอร์ 1 แบบที่ 2');
+  await handleText(e, 'U1', 'ออเดอร์ 1 รายละเอียด แดงทอง ราคาพิเศษ');
+  await handleText(e, 'U1', 'ออเดอร์ 1 วันที่ 12/11/69');
+  await handleText(e, 'U1', 'ออเดอร์ 1 ค่าจ้าง 150');
+  let r = await orderById(db, 1);
+  assert.equal(r.style, 'แบบที่ 2');
+  assert.equal(r.detail, 'แดงทอง ราคาพิเศษ', 'คำว่าราคาที่ติดอยู่ในรายละเอียดต้องไม่ถูกอ่านเป็นช่องราคา');
+  assert.equal(r.order_date, '2026-11-12');
+  assert.equal(r.wage, 15000);
+
+  const c = await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง -');
+  assert.ok(c.includes('ผู้สั่ง -'));
+  r = await orderById(db, 1);
+  assert.equal(r.customer, null);
+  assert.ok((await orderEvents(db, 1)).some((ev) => ev.text.includes('ผู้สั่ง: คุณเอ → -')), 'ของเดิมต้องย้อนดูได้');
+});
+
+test('แก้หลายชิ้นพร้อมกัน พร้อมติ๊กจ่ายท้ายข้อความ', async () => {
+  const db = freshDb();
+  await doAddOrder(env(db), cmdOrder({ style: 'ML', qty: 5 }));
+  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1-4 ผู้สั่ง คุณบี ราคา 1500 จ่ายแล้ว');
+  assert.ok(a.includes('แก้ออเดอร์ #1–#4 แล้ว (4 ชิ้น)'));
+  assert.ok(a.includes('จ่ายแล้ว ✓'));
+  const rows = await monthOrders(db, monthBkk());
+  assert.deepEqual(rows.map((r) => [r.customer, r.price, Boolean(r.paid_at)]),
+    [...Array(4).fill(['คุณบี', 150000, true]), [null, null, false]]);
+  assert.ok(rows.every((r) => r.wage_paid_at == null), 'จ่ายแล้วหลังราคาคือลูกค้าจ่าย ไม่ใช่ค่าจ้าง');
+});
+
+test('ค่าผิดรูปแบบ: บอกตัวอย่างที่ถูก ไม่แก้อะไร และไม่ส่งต่อให้ AI เดา', async () => {
+  const db = freshDb();
+  await doAddOrder(env(db), cmdOrder({ style: 'ML' }));
+  const a = await handleText(env(db), 'U1', 'ออเดอร์ 1 ราคา แพงมาก');
+  assert.ok(a.includes('ราคาต้องเป็นตัวเลข') && a.includes('ออเดอร์ 1 ราคา 2900'));
+  assert.equal((await orderById(db, 1)).price, null);
+});
+
+test('เรียกดู: ชิ้นเดียว รายชิ้นตามเงื่อนไข และตาราง A4', async () => {
+  const db = freshDb();
+  const e = env(db);
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 3 }));
+  await doAddOrder(e, cmdOrder({ style: 'mini', qty: 2 }));
+  await handleText(e, 'U1', 'ออเดอร์ 1 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900 จ่ายแล้ว');
+  await handleText(e, 'U1', 'ออเดอร์ 2 ผู้สั่ง คุณบี ราคา 2900');
+
+  const one = await handleText(e, 'U1', 'ออเดอร์ 1');
+  assert.ok(one.includes('ออเดอร์ #1') && one.includes('ผู้สั่ง: คุณเอ'));
+
+  const free = await handleText(e, 'U1', 'ออเดอร์ ว่าง');
+  assert.ok(free.includes('ยังไม่มีผู้สั่ง') && free.includes('3 ชิ้น'));
+  assert.ok(free.includes('#3 ML') && free.includes('#5 mini') && !free.includes('#1 ML'));
+
+  const unpaid = await handleText(e, 'U1', 'ออเดอร์ ยังไม่จ่าย');
+  assert.ok(unpaid.includes('#2 ML') && !unpaid.includes('#1 ML') && !unpaid.includes('#3 ML'),
+    'ยังไม่จ่าย = มีผู้สั่งแล้วแต่ยังไม่จ่าย ชิ้นที่ยังว่างไม่นับ');
+
+  const style = await handleText(e, 'U1', 'ออเดอร์ แบบ mini');
+  assert.ok(style.includes('2 ชิ้น') && style.includes('#4 mini') && !style.includes('ML'));
+
+  const who = await handleText(e, 'U1', 'ออเดอร์ ผู้สั่ง คุณเอ');
+  assert.ok(who.includes('1 ชิ้น') && who.includes('#1 ML'));
+
+  assert.ok((await handleText(e, 'U1', 'ออเดอร์ ช่องทาง ไลน์')).includes('#1 ML'));
+
+  for (const cmd of ['ตารางออเดอร์', 'ออเดอร์']) {
+    assert.ok((await handleText(e, 'U1', cmd)).includes('/d/'), cmd + ' ต้องส่งลิงก์ตาราง A4');
+  }
+  assert.ok(!free.includes('/d/') && !one.includes('/d/'), 'เรียกดูรายชิ้นไม่ต้องแนบลิงก์');
+});
+
+test('คู่มือคำสั่งออเดอร์เรียกได้จากไลน์ และตัวอย่างในคู่มือใช้ได้จริง', async () => {
+  const db = freshDb();
+  const e = env(db);
+  const help = await handleText(e, 'U1', 'วิธีสั่งออเดอร์');
+  assert.ok(help.includes('ออเดอร์ 3 ผู้สั่ง คุณเอ') && help.includes('ตารางออเดอร์'));
+
+  await doAddOrder(e, cmdOrder({ style: 'ML', qty: 10 }));
+  // ทุกบรรทัดตัวอย่างที่ขึ้นต้นด้วย "ออเดอร์" หรือ "ตารางออเดอร์" ต้องเข้าทางลัด ไม่หลุดไปถึง AI
+  const lines = help.split('\n').filter((l) => /^• (ออเดอร์|ตารางออเดอร์)/.test(l))
+    .map((l) => l.slice(2).replace(/\s{2,}\(.*$/, '').trim());
+  assert.ok(lines.length >= 20);
+  for (const l of lines) {
+    const out = (await doViewOrders(e, l)) ?? (await doMarkPaid(e, l)) ?? (await doOrderFields(e, l));
+    assert.ok(out, 'ตัวอย่างในคู่มืออ่านไม่ออก: ' + l);
+  }
 });

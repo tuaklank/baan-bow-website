@@ -16,12 +16,17 @@ import {
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
   addOrder, addOrders, orderById, updateOrder, voidOrder, monthOrders, orderSheetToken,
+  ordersByIds, updateOrdersBulk,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
 import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP } from './draft.js';
 import { huntLead } from './leads.js';
 import { push } from './line.js';
 import { summarizeOrders } from './order-sheet.js';
+import {
+  ORDER_HELP, ORDER_MAX_PER_COMMAND, readOrderIds, orderIdList,
+  parseOrderEdit, parseOrderView, filterOrders, orderViewTitle,
+} from './order-text.js';
 import {
   todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
   thaiDate, thaiDateNum, dayMonth, thaiMonth, fmtBaht,
@@ -69,12 +74,12 @@ export const HELP = `คำสั่งที่ใช้ได้
 📌 ออเดอร์โบว์ (สมุดจดว่าใครสั่งอะไร)
 • สั่งโบว์ ML แดงทอง 10 ชิ้น mini 5 ชิ้น      (สั่งมาไว้ก่อน ชิ้นละแถว ช่องทาง/ผู้สั่งว่างไว้)
 • สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900   (มีลูกค้าแล้วก็จดครบได้เลย)
-• ออเดอร์ 24 คุณเอ ทางไลน์                  (เติมผู้สั่งทีหลัง)
-• ออเดอร์ 24 จ่ายแล้ว   /   ออเดอร์ 8 9 12 จ่ายแล้ว   /   ออเดอร์ 8-12 จ่ายแล้ว   (ลูกค้าจ่าย)
-• ออเดอร์ 1-10 ค่าจ้าง 150   /   ออเดอร์ 1-10 จ่ายค่าจ้างแล้ว              (ค่าจ้างทำโบว์)
-• ออเดอร์ 24 สีแดงทอง   /   ออเดอร์ 24 ราคา 3200   /   ออเดอร์ 24 เปลี่ยนเป็น FB
+• ออเดอร์ 24 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900   (แก้ = ออเดอร์ + เลข + ชื่อช่อง + ค่าใหม่)
+• ออเดอร์ 24 จ่ายแล้ว   /   ออเดอร์ 8-12 จ่ายแล้ว              (ลูกค้าจ่าย)
+• ออเดอร์ 1-10 ค่าจ้าง 150   /   ออเดอร์ 1-10 จ่ายค่าจ้างแล้ว    (ค่าจ้างทำโบว์)
 • ลบออเดอร์ 24                   (ยกเลิก ไม่ลบ ประวัติยังอยู่)
-• ออเดอร์                        (ส่งลิงก์ตารางของเดือนนี้ เปิดดูหรือบันทึก PDF ได้)
+• ตารางออเดอร์                   (ลิงก์ตาราง A4 ของเดือนนี้ เปิดดูหรือบันทึก PDF ได้)
+• วิธีสั่งออเดอร์                  (รูปแบบคำสั่งแก้ไขและเรียกดูทั้งหมด)
 
 🔎 ลูกค้ามุ่งหวัง (ค้นเฉพาะตอนสั่ง ไม่มีรอบอัตโนมัติ)
 • หาลูกค้า                       (ค้นให้ 1 เจ้า ใช้เวลา 1-3 นาที)
@@ -1067,9 +1072,6 @@ const orderCard = (o) => [
   `ค่าจ้างทำ: ${o.wage != null ? fmtBaht(o.wage) + ' บาท' : '-'}${o.wage_paid_at ? ' (จ่ายแล้ว ✓)' : ''}`,
 ].join('\n');
 
-/** สั่งทีเดียวได้ไม่เกินนี้ — กันพิมพ์เลขเกินแล้วได้แถวเป็นพันโดยไม่ตั้งใจ (10 ชิ้น พิมพ์เป็น 1000) */
-const ORDER_MAX_PER_COMMAND = 200;
-
 /** "paid" / "จ่ายแล้ว" / "โอนแล้ว" -> true, "unpaid" / "ยังไม่จ่าย" -> false, ไม่พูดถึง -> null */
 function readPaid(text) {
   const t = String(text ?? '').trim().toLowerCase();
@@ -1130,7 +1132,7 @@ export async function doAddOrder(env, cmd) {
     }
     const firstId = done[0].match(/#(\d+)/)[1];
     return `📌 จดออเดอร์ ${pieces} ชิ้น · ${thaiDateNum(order_date)}\n${done.join('\n')}\n\n`
-      + (shared.customer ? '' : `ช่องทางกับผู้สั่งว่างไว้ก่อน มีคนสั่งแล้วเติมได้ เช่น "ออเดอร์ ${firstId} คุณเอ ทางไลน์"\n`)
+      + (shared.customer ? '' : `ช่องทางกับผู้สั่งว่างไว้ก่อน มีคนสั่งแล้วเติมได้ เช่น "ออเดอร์ ${firstId} ผู้สั่ง คุณเอ ช่องทาง Line"\n`)
       + `ลูกค้าจ่ายแล้วพิมพ์ "ออเดอร์ ${firstId} จ่ายแล้ว"\n`
       + (shared.wage != null
         ? `ค่าจ้างทำชิ้นละ ${fmtBaht(shared.wage)} — จ่ายช่างแล้วพิมพ์ "ออเดอร์ ${firstId}-${Number(firstId) + pieces - 1} จ่ายค่าจ้างแล้ว"\n`
@@ -1147,7 +1149,7 @@ export async function doAddOrder(env, cmd) {
 
   return `📌 จดออเดอร์ #${row.id} · ${thaiDateNum(row.order_date)}\n${orderCard(row)}\n\n`
     + (missing.length
-      ? `ยังไม่มี: ${missing.join(', ')} — เติมได้ เช่น "ออเดอร์ ${row.id} สีแดงทอง"\n`
+      ? `ยังไม่มี: ${missing.join(', ')} — เติมได้ เช่น "ออเดอร์ ${row.id} รายละเอียด แดงทอง"\n`
       : `แก้ได้ เช่น "ออเดอร์ ${row.id} ราคา 3200"\n`)
     + `ตาราง: ${await orderSheetUrl(env, row.order_date.slice(0, 7))}`;
 }
@@ -1173,7 +1175,8 @@ const orderShow = (k, v) => (v == null ? '-'
 export async function doMarkPaid(env, msg) {
   const m = String(msg).match(/^ออเดอร์\s*#?\s*([\d\s,#\-–]+?)\s*([^\d\s,#\-–].*?)(?:\s*(?:ครับ|ค่ะ|คะ))?$/u);
   if (!m) return null;
-  const rest = m[2].trim();
+  // "ลูกค้าจ่ายแล้ว" = "จ่ายแล้ว" — พิมพ์ให้ชัดว่าใครจ่ายก็ได้
+  const rest = m[2].trim().replace(/^ลูกค้า(?=จ่าย|โอน|ชำระ|ยังไม่)/u, '');
 
   const yes = '(?:จ่ายแล้ว|จ่ายเงินแล้ว|โอนแล้ว|ชำระแล้ว)';
   const no = '(?:ยังไม่จ่าย|ยังไม่ได้จ่าย|ยังไม่โอน)';
@@ -1192,52 +1195,86 @@ export async function doMarkPaid(env, msg) {
   } else return null;
   const what = field === 'paid_at' ? 'จ่ายแล้ว' : 'จ่ายค่าจ้างแล้ว';
 
-  // "8-12" = ช่วง, "8 9 12" หรือ "8,9,12" = ทีละเลข
-  const ids = new Set();
-  for (const part of m[1].split(/[\s,#]+/).filter(Boolean)) {
-    const range = part.match(/^(\d+)[-–](\d+)$/);
-    if (range) {
-      const [a, b] = [Number(range[1]), Number(range[2])].sort((x, y) => x - y);
-      if (b - a >= ORDER_MAX_PER_COMMAND) return `ช่วง ${a}–${b} กว้างเกินไปครับ แบ่งทีละไม่เกิน ${ORDER_MAX_PER_COMMAND} ออเดอร์`;
-      for (let i = a; i <= b; i++) ids.add(i);
-    } else if (/^\d+$/.test(part)) ids.add(Number(part));
-  }
-  if (!ids.size) return null;
+  const got = readOrderIds(m[1]);
+  if (got.error) return got.error;
+  if (!got.ids.length) return null;
 
-  const db = env.DB;
   const today = todayBkk();
-  const done = [], same = [], bad = [];
-  let ym = null;
-  for (const id of ids) {
-    const row = await orderById(db, id);
-    if (!row || row.status === 'void') { bad.push(id); continue; }
-    ym ??= row.order_date.slice(0, 7);
-    const changes = {};
-    const notes = [];
-    if (wage != null && wage !== row.wage) {
-      changes.wage = wage;
-      notes.push(`ค่าจ้างทำ: ${orderShow('wage', row.wage)} → ${fmtBaht(wage)}`);
-    }
-    if (paid != null && Boolean(row[field]) !== paid) {
-      changes[field] = paid ? today : null;
-      notes.push(`${what}: ${paid ? '- → ✓' : '✓ → -'}`);
-    }
-    if (!notes.length) { same.push(id); continue; }
-    await updateOrder(db, id, changes, notes.join(' | '));
-    done.push(id);
-  }
+  const res = await applyOrderChanges(env.DB, got.ids, (row) => {
+    const want = {};
+    if (wage != null) want.wage = wage;
+    if (paid != null && Boolean(row[field]) !== paid) want[field] = paid ? today : null;
+    return want;
+  });
 
-  const list = (a) => a.map((i) => '#' + i).join(' ');
   const did = [
     wage != null ? `ใส่ค่าจ้างทำชิ้นละ ${fmtBaht(wage)}` : null,
     paid === true ? `ติ๊ก${what}` : paid === false ? `เอาติ๊ก${what}ออก` : null,
   ].filter(Boolean).join(' + ');
-  return [
-    done.length ? `${paid === false ? '↩️' : '✅'} ${did} ${done.length} ออเดอร์: ${list(done)}` : null,
-    same.length ? `เป็นแบบนั้นอยู่แล้ว: ${list(same)}` : null,
-    bad.length ? `ไม่พบหรือถูกลบแล้ว: ${list(bad)}` : null,
-    ym ? `\nตาราง: ${await orderSheetUrl(env, ym)}` : null,
-  ].filter((x) => x !== null).join('\n');
+  return orderEditReply(res, `${paid === false ? '↩️' : '✅'} ${did} ${res.done.length} ออเดอร์: ${orderIdList(res.done)}`);
+}
+
+/**
+ * ลงการแก้กับหลายออเดอร์ — wantOf(row) คืนค่าที่อยากให้เป็น แล้วที่นี่เทียบกับของเดิมเอง
+ * แยกผลเป็น done (แก้แล้ว) / same (เป็นแบบนั้นอยู่แล้ว) / bad (ไม่พบหรือถูกลบ)
+ * อ่านและเขียนรวมเป็นไม่กี่คำสั่งฐานข้อมูล ไม่วนทีละแถว (ดู updateOrdersBulk)
+ */
+async function applyOrderChanges(db, ids, wantOf) {
+  const rows = new Map((await ordersByIds(db, ids)).map((r) => [r.id, r]));
+  const done = [], same = [], bad = [], items = [];
+  for (const id of ids) {
+    const row = rows.get(id);
+    if (!row || row.status === 'void') { bad.push(id); continue; }
+    const want = wantOf(row);
+    const changes = {};
+    const notes = [];
+    for (const k of Object.keys(want)) {
+      if (want[k] === undefined || want[k] === row[k]) continue;
+      changes[k] = want[k];
+      notes.push(`${ORDER_LABEL[k]}: ${orderShow(k, row[k])} → ${orderShow(k, want[k])}`);
+    }
+    if (!notes.length) { same.push(id); continue; }
+    items.push({ id, changes, text: notes.join(' | ') });
+    done.push(id);
+  }
+  await updateOrdersBulk(db, items);
+  return { done, same, bad };
+}
+
+/**
+ * คำตอบหลังแก้ — สั้นๆ บรรทัดเดียวต่อเรื่อง ไม่แนบการ์ดทั้งใบและไม่แนบลิงก์ตาราง
+ * เจ้าของร้านแก้ติดกันหลายข้อความ ได้ลิงก์เดิมกลับมาทุกครั้งมันรกแชต อยากดูตารางค่อยพิมพ์ "ตารางออเดอร์"
+ */
+const orderEditReply = (res, doneLine) => [
+  res.done.length ? doneLine : null,
+  res.same.length ? `เป็นแบบนั้นอยู่แล้ว: ${orderIdList(res.same)}` : null,
+  res.bad.length ? `ไม่พบหรือถูกลบแล้ว: ${orderIdList(res.bad)}` : null,
+].filter((x) => x !== null).join('\n');
+
+/**
+ * แก้ออเดอร์ด้วยแพตเทิร์นตายตัว "ออเดอร์ 3 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900"
+ * อ่านตรงๆ ไม่เรียก AI (ดู order-text.js) — คืน null ถ้าไม่ใช่แพตเทิร์นนี้
+ */
+export async function doOrderFields(env, msg) {
+  const today = todayBkk();
+  const cmd = parseOrderEdit(msg, today);
+  if (!cmd) return null;
+  if (cmd.error) return cmd.error;
+
+  const res = await applyOrderChanges(env.DB, cmd.ids, (row) => {
+    const want = { ...cmd.set };
+    if (cmd.paid != null && Boolean(row.paid_at) !== cmd.paid) want.paid_at = cmd.paid ? today : null;
+    if (cmd.wagePaid != null && Boolean(row.wage_paid_at) !== cmd.wagePaid) want.wage_paid_at = cmd.wagePaid ? today : null;
+    return want;
+  });
+
+  const what = [
+    ...Object.keys(cmd.set).map((k) => `${ORDER_LABEL[k]} ${orderShow(k, cmd.set[k])}`),
+    cmd.paid === true ? 'จ่ายแล้ว ✓' : cmd.paid === false ? 'เอาติ๊กจ่ายแล้วออก' : null,
+    cmd.wagePaid === true ? 'จ่ายค่าจ้างแล้ว ✓' : cmd.wagePaid === false ? 'เอาติ๊กจ่ายค่าจ้างออก' : null,
+  ].filter(Boolean).join(' · ');
+  const n = res.done.length;
+  return orderEditReply(res, `✅ แก้ออเดอร์ ${orderIdList(res.done)} แล้ว${n > 1 ? ` (${n} ชิ้น)` : ''}\n${what}`);
 }
 
 /**
@@ -1283,15 +1320,15 @@ export async function doEditOrder(env, cmd) {
     diff.push(`${ORDER_LABEL[k]}: ${orderShow(k, row[k])} → ${orderShow(k, want[k])}`);
   }
   if (!diff.length) {
-    return `ออเดอร์ #${id} ตรงกับที่พิมพ์มาอยู่แล้ว ไม่มีอะไรเปลี่ยนครับ\n${orderCard(row)}\n\n`
-      + `จะแก้อะไรบอกมาได้เลย เช่น "ออเดอร์ ${id} ราคา 3200" หรือ "ออเดอร์ ${id} เปลี่ยนเป็น FB"`;
+    return `ออเดอร์ #${id} ตรงกับที่พิมพ์มาอยู่แล้ว ไม่มีอะไรเปลี่ยนครับ\n`
+      + 'ดูรูปแบบคำสั่งแก้ไข พิมพ์ "วิธีสั่งออเดอร์"';
   }
 
   const updated = await updateOrder(db, id, changes, diff.join(' | '));
   if (!updated) return `ออเดอร์ #${id} ถูกยกเลิกไปก่อนหน้านี้แล้ว แก้ไม่ได้ครับ`;
 
-  return `✏️ แก้ออเดอร์ #${id} แล้ว\n${diff.join('\n')}\n\n${orderCard(updated)}\n\n`
-    + `ตาราง: ${await orderSheetUrl(env, updated.order_date.slice(0, 7))}`;
+  // ตอบเฉพาะช่องที่เปลี่ยน ไม่แนบการ์ดหรือลิงก์ — อยากดูทั้งใบพิมพ์ "ออเดอร์ N"
+  return `✏️ แก้ออเดอร์ #${id} แล้ว\n${diff.join('\n')}`;
 }
 
 /** ลบออเดอร์ = ยกเลิก ไม่ลบแถว และต้องยืนยันก่อน เพราะยกเลิกแล้วแก้กลับไม่ได้ */
@@ -1333,6 +1370,47 @@ async function doListOrders(env, cmd) {
     + `\n\n🧵 ค่าจ้างทำรวม ${fmtBaht(s.wage)}`
     + `\nจ่ายแล้ว ${fmtBaht(s.wagePaid)} (${s.wagePaidCount} ชิ้น) · ค้างจ่าย ${fmtBaht(s.wage - s.wagePaid)}`
     + `\n\nเปิดตาราง (พิมพ์หรือบันทึก PDF ได้จากในหน้า):\n${await orderSheetUrl(env, ym)}`;
+}
+
+const ORDER_LIST_MAX = 30;   // เกินนี้อ่านในแชตไม่ไหว ให้ไปดูในตาราง
+
+/** ออเดอร์หนึ่งชิ้นในหนึ่งบรรทัด ใช้ตอนเรียกดูเป็นรายชิ้น */
+const orderLine = (o, withWage) => `#${o.id} ${o.style}${o.detail ? ' ' + o.detail : ''}`
+  + ` · ${o.customer ?? 'ว่าง'}${o.channel ? ' ' + o.channel : ''}`
+  + ` · ${o.price != null ? fmtBaht(o.price) : '-'}${o.paid_at ? ' ✓' : ''}`
+  + (withWage ? ` · จ้าง ${o.wage != null ? fmtBaht(o.wage) : '-'}${o.wage_paid_at ? ' ✓' : ''}` : '');
+
+/**
+ * เรียกดูออเดอร์ด้วยแพตเทิร์นตายตัว (ดู parseOrderView) — คืน null ถ้าไม่ใช่คำสั่งเรียกดู
+ *   ตารางออเดอร์ [เดือน 10]   ยอดสรุป + ลิงก์ตาราง A4
+ *   ออเดอร์ 3                 ชิ้นเดียวทุกช่อง
+ *   ออเดอร์ ว่าง / ยังไม่จ่าย / ค้างค่าจ้าง / แบบ ML / ผู้สั่ง คุณเอ / ช่องทาง Line
+ */
+export async function doViewOrders(env, msg) {
+  const view = parseOrderView(msg, todayBkk());
+  if (!view) return null;
+  const db = env.DB;
+
+  if (view.kind === 'sheet') return doListOrders(env, { order: { order_date: view.ym + '-01' } });
+
+  if (view.kind === 'one') {
+    const row = await orderById(db, view.id);
+    if (!row) return `ไม่พบออเดอร์ #${view.id}`;
+    return `📌 ออเดอร์ #${row.id} · ${thaiDateNum(row.order_date)}`
+      + (row.status === 'void' ? ' · ถูกลบแล้ว' : '') + `\n${orderCard(row)}`;
+  }
+
+  const title = `${orderViewTitle(view)} · ${thaiMonth(view.ym)}`;
+  const rows = filterOrders(await monthOrders(db, view.ym), view);
+  if (!rows.length) return `📋 ${title}\nไม่มีรายการครับ`;
+
+  const withWage = String(view.flag ?? '').startsWith('wage');
+  const sum = (k) => rows.reduce((a, r) => a + (r[k] ?? 0), 0);
+  const more = rows.length - ORDER_LIST_MAX;
+  return `📋 ${title} — ${rows.length} ชิ้น\n`
+    + rows.slice(0, ORDER_LIST_MAX).map((r) => orderLine(r, withWage)).join('\n')
+    + (more > 0 ? `\n…อีก ${more} ชิ้น ดูครบในตาราง พิมพ์ "ตารางออเดอร์"` : '')
+    + `\n\nรวมราคา ${fmtBaht(sum('price'))}` + (withWage ? ` · ค่าจ้าง ${fmtBaht(sum('wage'))}` : '');
 }
 
 // ---------- ยืนยัน ----------
@@ -1465,13 +1543,13 @@ export async function handleText(env, uid, text, ctx = null) {
     return 'กำลังค้นให้ครับ ใช้เวลาประมาณ 1-3 นาที เจอแล้วจะส่งการ์ดมาให้';
   }
 
-  // ขอดูตารางออเดอร์ของเดือนนี้ — คำสั้นๆ ที่พิมพ์บ่อย ไม่ต้องเสียเวลาเรียก AI
-  if (/^(ออเดอร์|ดูออเดอร์|ตารางออเดอร์|รายการออเดอร์|ออเดอร์เดือนนี้|ออเดอร์ทั้งหมด)$/.test(msg)) {
-    return doListOrders(env, null);
+  // ออเดอร์โบว์ — แพตเทิร์นตายตัวทั้งหมดอ่านตรงๆ ไม่เรียก AI (ดู order-text.js)
+  // เรียงจากเรียกดู -> ติ๊กจ่าย -> แก้ช่อง; ที่ไม่เข้าแพตเทิร์นไหลไปให้ AI อ่านตามเดิม
+  if (/^(วิธีสั่งออเดอร์|วิธีแก้ออเดอร์|คู่มือออเดอร์|คำสั่งออเดอร์|ช่วยออเดอร์|ออเดอร์\s*\?)$/.test(msg)) return ORDER_HELP;
+  if (/ออเดอร์/.test(msg)) {
+    const orderAnswer = (await doViewOrders(env, msg)) ?? (await doMarkPaid(env, msg)) ?? (await doOrderFields(env, msg));
+    if (orderAnswer) return orderAnswer;
   }
-  // ติ๊กจ่ายแล้ว — "ออเดอร์ 8 9 12 จ่ายแล้ว" อ่านตรงๆ ไม่เรียก AI เหมือนกัน
-  const paidAnswer = await doMarkPaid(env, msg);
-  if (paidAnswer) return paidAnswer;
 
   // ขอแก้วันที่ของร่างที่รออยู่ — อ่านจากข้อความตรงๆ ไม่ต้องเรียก AI เหมือนกัน
   if (/^(วันที่|ลงวันที่|แก้วันที่|เปลี่ยนวันที่|ย้อนวันที่|ใช้วันที่)/.test(msg)) {
