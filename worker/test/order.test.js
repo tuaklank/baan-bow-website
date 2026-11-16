@@ -141,7 +141,7 @@ test('ช่องติ๊กว่างไว้เป็นกรอบเ�
     row({ id: 3, price: 390000, wage: 15000, wage_paid_at: '2026-11-16' }),
   ];
   const page = renderOrderSheet({ ym: '2026-11', rows, today: '2026-11-16' });
-  const [r1, r2, r3] = page.match(/<tr><td class="c">\d+<\/td>.*<\/tr>/g);
+  const [r1, r2, r3] = page.match(/<tr(?: class="free")?><td class="c first">\d+<\/td>.*<\/tr>/g);
   const ticks = (r) => [...r.matchAll(/<span class="tick( on)?">/g)].map((m) => Boolean(m[1]));
 
   // ช่องติ๊กสามช่องต่อแถว: ลูกค้าจ่ายแล้ว / ส่งแล้ว / จ่ายค่าจ้างแล้ว
@@ -149,9 +149,27 @@ test('ช่องติ๊กว่างไว้เป็นกรอบเ�
   assert.deepEqual(ticks(r2), [true, false, false], 'ลูกค้าจ่ายแล้ว แต่ยังไม่ส่งและยังไม่ได้จ่ายค่าจ้าง');
   assert.deepEqual(ticks(r3), [false, false, true], 'จ่ายค่าจ้างแล้ว แต่ลูกค้ายังไม่จ่าย');
   // โบว์ที่สั่งมาไว้ก่อน ช่องทาง/ผู้สั่ง/รายละเอียด/ราคา/ค่าจ้าง ต้องว่างจริงๆ รอเติม ไม่ใส่ขีด
-  assert.ok(r1.includes('<td></td><td></td><td></td><td class="r"></td>'));
+  assert.ok(r1.includes('<td></td><td></td><td class="free-cell">ยังว่าง</td><td class="r"></td>'));
   assert.ok(r1.includes('<td class="r out"></td>'));
   assert.ok(r2.includes('<td class="r out">150.00</td>'));
+});
+
+test('รายการที่ยังไม่มีผู้สั่งถูกไฮไลต์ไว้ว่ายังว่าง รายการที่ขายแล้วไม่โดนแต้มสี', () => {
+  const rows = [
+    row({ id: 1 }),
+    row({ id: 2, channel: 'Line', customer: 'คุณเอ', price: 390000 }),
+  ];
+  const page = renderOrderSheet({ ym: '2026-11', rows, today: '2026-11-16' });
+  const [r1, r2] = page.match(/<tr(?: class="free")?><td class="c first">\d+<\/td>.*<\/tr>/g);
+
+  assert.ok(r1.startsWith('<tr class="free">'),'แถวที่ยังไม่มีผู้สั่งต้องมีคลาส free ไว้ขีดแดงหน้าแถว');
+  assert.ok(r1.includes('<td class="free-cell">ยังว่าง</td>'), 'ช่องผู้สั่งบอกว่ายังว่าง');
+  assert.ok(!r2.includes('class="free'), 'รายการที่มีผู้สั่งแล้วต้องไม่โดนไฮไลต์');
+  assert.ok(r2.includes('<td>คุณเอ</td>'));
+
+  // สีต้องมาจาก CSS ไม่ใช่ inline style ในแถว เพื่อให้ชนะแถบสลับสีของแม่แบบได้ด้วยคลาส
+  assert.ok(page.includes('tbody tr.free td.first{box-shadow:inset 3px 0 0 var(--wine)}'));
+  assert.ok(page.includes('tbody tr.free td.free-cell{background:rgba(181,22,31,.10)'));
 });
 
 test('สรุปยอด: ราคาขาย ค่าจ้าง ส่วนที่จ่ายแล้ว/ยังไม่จ่าย และแยกตามแบบโบว์', () => {
@@ -870,7 +888,7 @@ test('มัดจำ: ใส่ยอดแล้วคงเหลือคิ
     row({ id: 4 }),
   ];
   const page = renderOrderSheet({ ym: '2026-11', rows, today: '2026-11-16' });
-  const [r1, r2, r3, r4] = page.match(/<tr><td class="c">\d+<\/td>.*<\/tr>/g);
+  const [r1, r2, r3, r4] = page.match(/<tr(?: class="free")?><td class="c first">\d+<\/td>.*<\/tr>/g);
   assert.ok(r1.includes('<td class="r">1,500.00</td><td class="r rem">2,500.00</td>'));
   assert.ok(r2.includes('<td class="r">1,000.00</td><td class="r rem">0.00</td>'), 'จ่ายครบแล้วคงเหลือ 0');
   assert.ok(r3.includes('<td class="r"></td><td class="r rem"></td>'), 'ไม่มีมัดจำ เว้นว่างทั้งมัดจำและคงเหลือ');

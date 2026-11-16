@@ -90,6 +90,12 @@ td.r{white-space:nowrap;font-variant-numeric:tabular-nums}
 /* คงเหลือ = เงินที่ยังต้องเก็บ ให้เด่นกว่าตัวเลขอื่นในแถว */
 td.rem{font-weight:600;color:var(--wine)}
 td.style{font-weight:600}
+/* รายการที่ยังไม่มีผู้สั่ง = ของที่ยังว่าง ขายได้ — แต้มช่องผู้สั่งแดงอ่อนโปร่งแสง
+   กับขีดแดงหน้าแถว ไว้กวาดตาหาแถวว่างได้เร็วตอนตารางยาวหลายหน้า
+   สีบางพอให้ตัวเลขช่องอื่นในแถวยังอ่านได้ปกติ และติดมาตอนพิมพ์ (แม่แบบตั้ง print-color-adjust:exact ไว้)
+   คลาสสองชั้นเพื่อให้ชนะแถบสลับสี tbody tr:nth-child(even) td โดยไม่ต้องใช้ !important */
+tbody tr.free td.first{box-shadow:inset 3px 0 0 var(--wine)}
+tbody tr.free td.free-cell{background:rgba(181,22,31,.10);color:#A32D2D}
 /* เส้นคั่นระหว่างฝั่งเงินเข้า (ราคา/ลูกค้าจ่าย) กับฝั่งเงินออก (ค่าจ้าง/จ่ายช่าง) */
 .out{border-left:1.5px solid var(--gold)}
 thead th.out{border-left-color:rgba(255,255,255,.55)}
@@ -146,8 +152,9 @@ export function renderOrderSheet({ ym, rows, today }) {
   const s = summarizeOrders(rows);
   const eg = rows[0]?.id ?? 1;
 
-  const body = rows.map((r) => `      <tr><td class="c">${r.id}</td><td class="c">${dayMonth(r.order_date)}</td>`
-    + `<td class="style">${esc(r.style)}</td>${cell(r.detail)}${cell(r.channel)}${cell(r.customer)}`
+  const body = rows.map((r) => `      <tr${r.customer ? '' : ' class="free"'}><td class="c first">${r.id}</td><td class="c">${dayMonth(r.order_date)}</td>`
+    + `<td class="style">${esc(r.style)}</td>${cell(r.detail)}${cell(r.channel)}`
+    + (r.customer ? cell(r.customer) : '<td class="free-cell">ยังว่าง</td>')
     + `<td class="r">${money(r.price)}</td><td class="r">${money(r.deposit)}</td><td class="r rem">${money(orderRemaining(r))}</td>`
     + `<td class="c">${tick(r.paid_at)}</td><td class="c">${tick(r.shipped_at)}</td>`
     + `<td class="r out">${money(r.wage)}</td><td class="c">${tick(r.wage_paid_at)}</td></tr>`).join('\n');
