@@ -73,6 +73,10 @@ details.nums td{font-variant-numeric:tabular-nums}
 .otable .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .otable .id{color:var(--mute);white-space:nowrap}
 .otable .style{font-weight:600}
+/* รายการที่ยังไม่มีผู้สั่ง = ของที่ยังว่าง ขายได้ — ไฮไลต์ชุดเดียวกับหน้า A4 (order-sheet.js)
+   ที่ยกเลิกไปแล้วไม่นับว่าว่าง เพราะขายไม่ได้อยู่ดี */
+.otable tr.free td.id{box-shadow:inset 3px 0 0 var(--wine)}
+.otable tr.free td.free-cell{background:rgba(181,22,31,.10);color:#A32D2D}
 .otable tr.void td{text-decoration:line-through;opacity:.5}
 ${CHART_CSS}`;
 
@@ -203,6 +207,8 @@ function ordersView(rows, month) {
   // ช่องที่ยังไม่มีข้อมูลเว้นว่าง ไม่ใส่ขีด — ตอนเพิ่งสั่งของมาตารางว่างเกือบทั้งหน้า (เหมือนหน้า A4)
   const v = (x) => (x == null ? '' : esc(x));
   const m = (x) => (x != null ? fmtBaht(x) : '');
+  // ว่าง = ยังไม่มีผู้สั่งและยังไม่ถูกยกเลิก (summarizeOrders นับ s.free แบบเดียวกัน)
+  const free = (o) => o.status !== 'void' && !o.customer;
   return `<div class="sum">
   <h2>รายการเดือนนี้</h2>
   <div class="line"><span>จำนวน</span><b>${s.count} ชิ้น</b></div>
@@ -225,7 +231,7 @@ function ordersView(rows, month) {
 <div class="otable"><table>
 <thead><tr><th>#</th><th>แบบโบว์</th><th>รายละเอียด</th><th>ช่องทาง</th><th>ผู้สั่ง</th><th class="r">ราคา</th><th>จ่ายแล้ว</th><th class="r">ค่าจ้างทำ</th><th>จ่ายแล้ว</th></tr></thead>
 <tbody>
-${rows.map((o) => `<tr${o.status === 'void' ? ' class="void"' : ''}><td class="id">${o.id} · ${dayMonth(o.order_date)}</td><td class="style">${esc(o.style)}</td><td>${v(o.detail)}</td><td>${v(o.channel)}</td><td>${v(o.customer)}</td><td class="r">${m(o.price)}</td><td class="paid">${o.paid_at ? '✓' : ''}</td><td class="r">${m(o.wage)}</td><td class="paid">${o.wage_paid_at ? '✓' : ''}</td></tr>`).join('\n')}
+${rows.map((o) => `<tr${o.status === 'void' ? ' class="void"' : free(o) ? ' class="free"' : ''}><td class="id">${o.id} · ${dayMonth(o.order_date)}</td><td class="style">${esc(o.style)}</td><td>${v(o.detail)}</td><td>${v(o.channel)}</td>${free(o) ? '<td class="free-cell">ยังว่าง</td>' : `<td>${v(o.customer)}</td>`}<td class="r">${m(o.price)}</td><td class="paid">${o.paid_at ? '✓' : ''}</td><td class="r">${m(o.wage)}</td><td class="paid">${o.wage_paid_at ? '✓' : ''}</td></tr>`).join('\n')}
 </tbody>
 </table></div>`;
 }

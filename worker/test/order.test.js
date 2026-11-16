@@ -210,6 +210,7 @@ test('หน้าหลังบ้านมีแท็บรายการ �
   const orders = [
     { id: 2, order_date: '2026-11-15', style: 'mini', channel: 'Shop', detail: null, customer: null, price: 47500, status: 'void' },
     { id: 1, order_date: '2026-11-15', style: 'ML', channel: 'FB', detail: 'แดง', customer: 'คุณซี', price: 390000, status: 'recorded' },
+    { id: 3, order_date: '2026-11-15', style: 'mini', channel: null, detail: null, customer: null, price: null, status: 'recorded' },
   ];
   const page = renderAdmin({
     tab: 'orders', today: '2026-11-15', jobs: [], docs: [], orders, monthOrd: [orders[1]],
@@ -217,6 +218,11 @@ test('หน้าหลังบ้านมีแท็บรายการ �
   assert.ok(page.includes('href="/admin?tab=orders"'));
   assert.ok(page.includes('3,900.00'));
   assert.ok(page.includes('<tr class="void">'));
+
+  // ยังไม่มีผู้สั่ง = ไฮไลต์ว่ายังว่าง เหมือนหน้า A4 ส่วนที่ยกเลิกแล้วไม่นับว่าว่าง ขายไม่ได้อยู่ดี
+  assert.ok(page.includes('<tr class="free">'), 'รายการที่ยังไม่มีผู้สั่งต้องถูกไฮไลต์ในหน้าหลังบ้านด้วย');
+  assert.equal((page.match(/<td class="free-cell">ยังว่าง<\/td>/g) ?? []).length, 1, 'ไฮไลต์เฉพาะรายการว่างที่ยังไม่ถูกยกเลิก');
+  assert.ok(page.includes('.otable tr.free td.free-cell{background:rgba(181,22,31,.10)'));
 });
 
 // ---------- คำสั่งทางไลน์ (ทางที่ไม่ต้องเรียก AI) ----------
