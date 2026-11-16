@@ -376,6 +376,128 @@ export async function jobExpenses(db, jobId) {
   return results;
 }
 
+// ---------- รายการโบว์ ----------
+const ORDER_FIELDS = [
+  'order_date', 'style', 'channel', 'detail', 'customer', 'price', 'deposit', 'paid_at', 'shipped_at', 'wage', 'wage_paid_at',
+];
+
+export async function addOrder(db, o) {
+  const res = await db.prepare(`
+    INSERT INTO bow_orders (order_date, style, channel, detail, customer, price, wage)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null, o.wage ?? null).run();
+  return orderById(db, res.meta.last_row_id);
+}
+
+/**
+ * จดโบว์แบบเดียวกันทีละหลายชิ้น — ชิ้นละแถว เลขเรียงติดกัน คืนเลขแรกและเลขสุดท้าย
+ * ใช้คำสั่งเดียวต่อหนึ่งแบบ ไม่วนจดทีละแถว เพราะสั่งมาทีเป็นสิบๆ ชิ้น
+ * ถ้าวนทีละแถวจะชนเพดานจำนวนคำสั่งฐานข้อมูลต่อหนึ่งข้อความของ Cloudflare
+ */
+export async function addOrders(db, o, qty) {
+  const res = await db.prepare(`
+    INSERT INTO bow_orders (order_date, style, channel, detail, customer, price, wage)
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+    SELECT ?,?,?,?,?,?,? FROM n
+  `).bind(qty, o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null, o.wage ?? null).run();
+  const last = res.meta.last_row_id;
+  return { first: last - qty + 1, last };
+}
+
+/** แถวที่ถูกลบไปแล้ว เรียงจากเลขน้อย — เลขพวกนี้ว่างอยู่ จดรายการใหม่ให้เอามาใช้ก่อนออกเลขใหม่ */
+export async function voidOrderRows(db, limit) {
+  const { results } = await db.prepare("SELECT * FROM bow_orders WHERE status = 'void' ORDER BY id LIMIT ?").bind(limit).all();
+  return results;
+}
+
+/** เลขมากสุดที่เคยมี (รวมที่ลบแล้ว) — เลขถัดไปที่จดต่อท้ายได้คือค่านี้ + 1 */
+export async function maxOrderId(db) {
+  const row = await db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM bow_orders').first();
+  return row.n;
+}
+
+/** จดลงเลขที่ระบุ ใช้เมื่อเจ้าของร้านพิมพ์เลขถัดไปมาเอง ("รายการ 7 แบบ ML") — ผู้เรียกต้องเช็กว่าเลขนั้นยังไม่มี */
+export async function addOrderAt(db, id, o) {
+  await db.prepare(`
+    INSERT INTO bow_orders (id, order_date, style, channel, detail, customer, price, paid_at, wage, wage_paid_at, deposit, shipped_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, o.order_date, o.style, o.channel ?? null, o.detail ?? null, o.customer ?? null, o.price ?? null,
+    o.paid_at ?? null, o.wage ?? null, o.wage_paid_at ?? null, o.deposit ?? null, o.shipped_at ?? null).run();
+}
+
+export const orderById = (db, id) =>
+  db.prepare('SELECT * FROM bow_orders WHERE id = ?').bind(id).first();
+
+/**
+ * แก้รายการทับแถวเดิม — ต่างจากรายจ่ายที่ยกเลิกแล้วลงใหม่ เพราะเลขรายการต้องคงเดิม
+ * เจ้าของร้านอ้าง "รายการ 24" ซ้ำหลายรอบเพื่อเติมทีละช่อง ถ้าเลขเปลี่ยนทุกครั้งจะตามไม่ได้
+ * ประวัติว่าเคยเป็นอะไรมาก่อนเก็บใน bow_order_events แทน
+ * changes ใส่เฉพาะช่องที่จะแก้ ช่องที่ไม่ใส่คงค่าเดิม; คืน null ถ้าไม่มีแถวหรือถูกยกเลิกแล้ว
+ */
+export async function updateOrder(db, id, changes, eventText) {
+  const keys = ORDER_FIELDS.filter((k) => changes[k] !== undefined);
+  if (!keys.length) return orderById(db, id);
+  const res = await db.prepare(`
+    UPDATE bow_orders SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now')
+    WHERE id = ? AND status = 'recorded'
+  `).bind(...keys.map((k) => changes[k]), id).run();
+  if (!res.meta.changes) return null;
+  await db.prepare('INSERT INTO bow_order_events (order_id, text) VALUES (?, ?)')
+    .bind(id, eventText || 'แก้ไข').run();
+  return orderById(db, id);
+}
+
+/** ลบรายการ = ยกเลิก ไม่ลบแถว เหมือนทุกตารางในระบบ; คืน false ถ้ายกเลิกไปแล้ว */
+export async function voidOrder(db, id, reason) {
+  const res = await db.prepare(`
+    UPDATE bow_orders SET status = 'void', void_reason = ?, voided_at = datetime('now'),
+                          updated_at = datetime('now')
+    WHERE id = ? AND status = 'recorded'
+  `).bind(reason ?? null, id).run();
+  if (res.meta.changes > 0) {
+    await db.prepare('INSERT INTO bow_order_events (order_id, text) VALUES (?, ?)')
+      .bind(id, 'ยกเลิก' + (reason ? ` — ${reason}` : '')).run();
+  }
+  return res.meta.changes > 0;
+}
+
+export async function orderEvents(db, id) {
+  const { results } = await db.prepare(
+    'SELECT * FROM bow_order_events WHERE order_id = ? ORDER BY id',
+  ).bind(id).all();
+  return results;
+}
+
+/** รายการของเดือน (YYYY-MM) เรียงตามวันที่แล้วตามเลข — ที่ยกเลิกแล้วไม่รวม */
+export async function monthOrders(db, ym) {
+  const { results } = await db.prepare(`
+    SELECT * FROM bow_orders WHERE status = 'recorded' AND order_date LIKE ?
+    ORDER BY order_date, id
+  `).bind(ym + '-%').all();
+  return results;
+}
+
+/** รายการล่าสุดสำหรับหน้า /admin — รวมที่ยกเลิกแล้วด้วย ให้เห็นว่าเคยจดอะไรไว้ (เหมือน recentExpenses) */
+export async function recentOrders(db, limit = 50) {
+  const { results } = await db.prepare(
+    'SELECT * FROM bow_orders ORDER BY order_date DESC, id DESC LIMIT ?',
+  ).bind(limit).all();
+  return results;
+}
+
+/**
+ * token ของหน้าตารางรายการเดือนนั้น — มีอยู่แล้วใช้ตัวเดิม ไม่มีสร้างใหม่
+ * ลิงก์ของเดือนเดียวกันจึงเหมือนเดิมทุกครั้ง เปิดค้างไว้แล้วกดรีเฟรชก็เห็นรายการล่าสุด
+ */
+export async function orderSheetToken(db, ym) {
+  await db.prepare('INSERT OR IGNORE INTO order_sheets (ym, token) VALUES (?, ?)')
+    .bind(ym, newToken()).run();
+  return (await db.prepare('SELECT token FROM order_sheets WHERE ym = ?').bind(ym).first()).token;
+}
+
+export const orderSheetByToken = (db, token) =>
+  db.prepare('SELECT * FROM order_sheets WHERE token = ?').bind(token).first();
+
 /** ตัดสต๊อกของงานนี้ไปแล้วหรือยัง — กันกดส่งของซ้ำแล้วสต๊อกหายสองเท่า */
 export async function stockMovesOfJob(db, jobId) {
   const { results } = await db.prepare(
@@ -486,4 +608,100 @@ export async function productsByKeys(db, keys) {
     `SELECT * FROM products WHERE name_key IN (${qs})`,
   ).bind(...keys).all();
   return results;
+}
+
+// ---------- รายการโบว์: แก้ทีละหลายชิ้น ----------
+// "รายการ 1-30 ค่าจ้าง 150" แตะสามสิบแถวในข้อความเดียว ถ้าวนอ่าน-แก้-จดประวัติทีละแถว
+// จะชนเพดานจำนวนคำสั่งฐานข้อมูลต่อหนึ่งข้อความของ Cloudflare จึงรวมเป็นไม่กี่คำสั่ง
+const ORDER_STATE = [...ORDER_FIELDS, 'status', 'void_reason', 'voided_at'];   // ทุกช่องที่คำสั่งหนึ่งเปลี่ยนได้
+const ORDER_CHUNK = 40;   // D1 รับตัวแปรได้ 100 ตัวต่อคำสั่ง — ประวัติใช้ 2 ตัวต่อแถว
+const chunksOf = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
+
+/** อ่านหลายรายการในคำสั่งเดียว (รวมที่ยกเลิกแล้ว ให้ผู้เรียกแยกเอง) */
+export async function ordersByIds(db, ids) {
+  const out = [];
+  for (const part of chunksOf(ids, 90)) {
+    const { results } = await db.prepare(
+      `SELECT * FROM bow_orders WHERE id IN (${part.map(() => '?').join(',')})`,
+    ).bind(...part).all();
+    out.push(...results);
+  }
+  return out;
+}
+
+/**
+ * แก้หลายรายการพร้อมกัน — items = [{id, changes, text}] โดย text คือบรรทัดประวัติของแถวนั้น
+ * แถวที่แก้เหมือนกันรวมเป็น UPDATE เดียว (ปกติทั้งชุดแก้เหมือนกันหมด จึงเหลือคำสั่งเดียว)
+ * แก้เฉพาะแถวที่ยังไม่ถูกยกเลิก เหมือน updateOrder
+ */
+export async function updateOrdersBulk(db, items, { anyStatus = false } = {}) {
+  // anyStatus = เขียนสถานะได้ด้วย (ลบ / กู้คืน / ย้อนกลับ) — ปกติแก้ได้เฉพาะช่องข้อมูลของแถวที่ยังไม่ถูกลบ
+  const fields = anyStatus ? ORDER_STATE : ORDER_FIELDS;
+  const groups = new Map();
+  for (const it of items) {
+    const keys = fields.filter((k) => it.changes[k] !== undefined);
+    if (!keys.length) continue;
+    const sig = JSON.stringify(keys.map((k) => [k, it.changes[k]]));
+    if (!groups.has(sig)) groups.set(sig, { keys, changes: it.changes, rows: [] });
+    groups.get(sig).rows.push(it);
+  }
+  for (const g of groups.values()) {
+    for (const part of chunksOf(g.rows, ORDER_CHUNK)) {
+      await db.prepare(`
+        UPDATE bow_orders SET ${g.keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now')
+        WHERE ${anyStatus ? '' : "status = 'recorded' AND "}id IN (${part.map(() => '?').join(',')})
+      `).bind(...g.keys.map((k) => g.changes[k]), ...part.map((r) => r.id)).run();
+      await db.prepare(
+        `INSERT INTO bow_order_events (order_id, text) VALUES ${part.map(() => '(?, ?)').join(', ')}`,
+      ).bind(...part.flatMap((r) => [r.id, r.text || 'แก้ไข'])).run();
+    }
+  }
+}
+
+// ---------- รายการโบว์: ย้อนกลับ / เดินหน้า ----------
+// เก็บคำสั่งรายการของผู้ใช้เรียงกันเป็นแถว (ดู migration 0007) ย้อนได้ทีละคำสั่งจากล่าสุดถอยไป
+// และเดินหน้ากลับมาได้ถ้าย้อนเกิน — เหมือน Undo/Redo ในโปรแกรมทั่วไป
+// payload = { created: [เลขที่จดขึ้นมาใหม่], before: [แถวเดิมก่อนถูกแก้/ลบ], after: [แถวตอนถูกย้อน] }
+export const ORDER_UNDO_DEPTH = 20;   // เก็บย้อนหลังได้เท่านี้คำสั่งต่อคน เก่ากว่านั้นทิ้ง
+
+/** จดคำสั่งรายการที่เพิ่งทำ — ทางเดินหน้าเดิม (ที่เคยย้อนไว้) ใช้ไม่ได้แล้ว จึงทิ้ง */
+export async function saveOrderUndo(db, uid, label, payload) {
+  await db.prepare("DELETE FROM order_undo WHERE user_id = ? AND state = 'undone'").bind(uid).run();
+  await db.prepare('INSERT INTO order_undo (user_id, label, payload) VALUES (?, ?, ?)')
+    .bind(uid, label, JSON.stringify(payload)).run();
+  await db.prepare(`
+    DELETE FROM order_undo WHERE user_id = ? AND id NOT IN (
+      SELECT id FROM order_undo WHERE user_id = ? ORDER BY id DESC LIMIT ?
+    )
+  `).bind(uid, uid, ORDER_UNDO_DEPTH).run();
+}
+
+/**
+ * คำสั่งถัดไปที่จะย้อน (dir = 'undo': ตัวล่าสุดที่ยังมีผล) หรือจะเดินหน้า (dir = 'redo': ตัวเก่าสุดที่ถูกย้อน)
+ * คืน { id, label, created, before, after } หรือ null ถ้าไม่มีแล้ว
+ */
+export async function nextOrderUndo(db, uid, dir) {
+  const row = await db.prepare(dir === 'undo'
+    ? "SELECT id, label, payload FROM order_undo WHERE user_id = ? AND state = 'done' ORDER BY id DESC LIMIT 1"
+    : "SELECT id, label, payload FROM order_undo WHERE user_id = ? AND state = 'undone' ORDER BY id ASC LIMIT 1",
+  ).bind(uid).first();
+  return row ? { id: row.id, label: row.label, ...JSON.parse(row.payload) } : null;
+}
+
+/** เปลี่ยนสถานะคำสั่งหลังย้อน/เดินหน้า — payload ใส่มาเมื่อต้องจำสภาพ after เพิ่ม */
+export async function markOrderUndo(db, id, state, payload = null) {
+  if (payload) {
+    await db.prepare('UPDATE order_undo SET state = ?, payload = ? WHERE id = ?').bind(state, JSON.stringify(payload), id).run();
+  } else {
+    await db.prepare('UPDATE order_undo SET state = ? WHERE id = ?').bind(state, id).run();
+  }
+}
+
+/** เหลือให้ย้อน (done) และให้เดินหน้า (undone) อีกกี่คำสั่ง */
+export async function orderUndoCounts(db, uid) {
+  const { results } = await db.prepare(
+    'SELECT state, COUNT(*) AS n FROM order_undo WHERE user_id = ? GROUP BY state',
+  ).bind(uid).all();
+  const of = (s) => results.find((r) => r.state === s)?.n ?? 0;
+  return { undo: of('done'), redo: of('undone') };
 }

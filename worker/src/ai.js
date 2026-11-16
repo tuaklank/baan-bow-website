@@ -13,7 +13,7 @@ export const SCHEMA = {
   required: [
     'intent', 'doc_type', 'seller', 'customer', 'items', 'discount', 'vat_mode', 'wht_percent',
     'issue_date', 'payment_terms', 'note', 'from_doc_no', 'doc_no', 'query', 'job', 'holiday',
-    'stock', 'expense',
+    'stock', 'expense', 'order',
   ],
   properties: {
     intent: {
@@ -23,6 +23,7 @@ export const SCHEMA = {
         'create_job', 'job_from_doc', 'update_job', 'list_jobs',
         'receive_stock', 'ship_job', 'count_stock', 'list_stock', 'set_price',
         'add_expense', 'void_expense', 'edit_expense',
+        'add_order', 'edit_order', 'void_order', 'list_orders',
         'search', 'month_summary', 'add_holiday',
         'help', 'unknown',
       ],
@@ -120,6 +121,26 @@ export const SCHEMA = {
         note:       { type: 'string', description: 'จ่ายค่าอะไร ร้านไหน' },
       },
     },
+    order: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'style', 'channel', 'detail', 'customer', 'price', 'order_date', 'qty', 'paid', 'wage', 'wage_paid', 'deposit', 'shipped'],
+      properties: {
+        id:         { type: 'number', description: 'เลขรายการที่จะแก้หรือลบ ไม่ใช่กรณีนั้นให้ใส่ 0' },
+        style:      { type: 'string', description: 'แบบของโบว์ เช่น แบบที่ 2, ML, mini, ดอกไม้' },
+        channel:    { type: 'string', description: 'ช่องทางที่ลูกค้าสั่ง: Line | FB | Shop | Live หรือตามที่ผู้ใช้พิมพ์' },
+        detail:     { type: 'string', description: 'รายละเอียดของโบว์ เช่น สี ขนาด จำนวน' },
+        customer:   { type: 'string', description: 'ชื่อคนสั่ง' },
+        price:      { type: 'number', description: 'ราคาเป็นบาท ตามที่ผู้ใช้พิมพ์ ไม่บอกให้ใส่ 0' },
+        order_date: { type: 'string', description: 'YYYY-MM-DD ค.ศ. ไม่บอกวันให้ใส่ "" (ระบบใช้วันนี้)' },
+        qty:        { type: 'number', description: 'จำนวนชิ้นที่สั่ง ไม่บอกให้ใส่ 1' },
+        paid:       { type: 'string', description: 'ลูกค้าจ่ายค่าโบว์: paid = แจ้งว่าจ่าย/โอนแล้ว, unpaid = บอกว่ายังไม่จ่าย, "" = ไม่ได้พูดถึง' },
+        wage:       { type: 'number', description: 'ค่าจ้างทำโบว์ต่อชิ้นเป็นบาท ไม่บอกให้ใส่ 0' },
+        deposit:    { type: 'number', description: 'เงินมัดจำที่ลูกค้าจ่ายมาแล้วเป็นบาท (จ่ายบางส่วน ยังไม่ครบ) ไม่บอกให้ใส่ 0' },
+        shipped:    { type: 'string', description: 'ส่งของให้ลูกค้า: shipped = ส่งแล้ว, unshipped = ยังไม่ส่ง ไม่พูดถึงให้ใส่ ""' },
+        wage_paid:  { type: 'string', description: 'จ่ายค่าจ้างทำโบว์ให้ช่าง: paid = จ่ายค่าจ้างแล้ว, unpaid = ยังไม่จ่ายค่าจ้าง, "" = ไม่ได้พูดถึง' },
+      },
+    },
   },
 };
 
@@ -132,6 +153,7 @@ export const EMPTY = {
   holiday: { date: null, name: null },
   stock: { name: null, qty: 0, unit_cost: null, price: null, note: null },
   expense: { id: 0, category: null, amount: 0, spent_date: null, note: null },
+  order: { id: 0, style: null, channel: null, detail: null, customer: null, price: 0, order_date: null, qty: 1, paid: null, wage: 0, wage_paid: null, deposit: 0, shipped: null },
   failed: null,
 };
 
@@ -148,6 +170,7 @@ function normalize(raw) {
   const h = raw.holiday ?? {};
   const st = raw.stock ?? {};
   const ex = raw.expense ?? {};
+  const od = raw.order ?? {};
   return {
     intent: raw.intent || 'unknown',
     doc_type: str(raw.doc_type),
@@ -191,6 +214,21 @@ function normalize(raw) {
       amount: num(ex.amount),
       spent_date: str(ex.spent_date),
       note: str(ex.note),
+    },
+    order: {
+      id: Math.round(num(od.id)),
+      style: str(od.style),
+      channel: str(od.channel),
+      detail: str(od.detail),
+      customer: str(od.customer),
+      price: num(od.price),
+      order_date: str(od.order_date),
+      qty: Math.round(num(od.qty)) > 0 ? Math.round(num(od.qty)) : 1,
+      paid: str(od.paid),
+      wage: num(od.wage),
+      wage_paid: str(od.wage_paid),
+      deposit: num(od.deposit),
+      shipped: str(od.shipped),
     },
     failed: null,
   };
@@ -240,6 +278,43 @@ function systemPrompt(today) {
   (expense.id = เลขรายการ แล้วใส่เฉพาะช่องที่ผู้ใช้บอกว่าจะแก้ ช่องที่ไม่พูดถึงให้ใส่ "" หรือ 0
    ระบบจะใช้ค่าเดิมของรายการนั้นให้เอง ห้ามเดาค่าเดิมมาใส่)
   ต่างจาก add_expense ตรงที่มีเลขรายการเดิมอ้างอยู่ — ไม่มีเลขรายการเมื่อไหร่คือ add_expense
+- จดรายการโบว์ลงสมุด เช่น "สั่งโบว์แบบที่สอง คุณเอสั่งมาทางไลน์ ราคา 2,900"
+  "รายการใหม่ ML แดงทอง คุณบี FB 3900" "จดรายการ mini 50 ซม. สีส้ม shop 475" = add_order
+  (order.style = แบบของโบว์, order.channel = ช่องทางที่ลูกค้าสั่ง, order.detail = สี/ขนาด/รายละเอียด,
+   order.customer = ชื่อคนสั่ง, order.price = ราคาเป็นบาท, order.order_date ถ้าบอกวันมา
+   "แบบที่สอง" ให้เขียนเป็น "แบบที่ 2" ใช้เลขอารบิกเสมอ ช่องที่ผู้ใช้ไม่พูดถึงให้ใส่ "" หรือ 0)
+  เจ้าของร้านมักสั่งโบว์มาไว้ก่อนทีละหลายชิ้นโดยยังไม่มีลูกค้า เช่น "สั่งโบว์ ML แดงทอง 10 ชิ้น ราคา 3900"
+  = add_order ใส่ order.qty = 10 (จำนวนชิ้น) ส่วน order.customer กับ order.channel ใส่ "" ห้ามเดา
+  ถ้าสั่งหลายแบบในข้อความเดียว เช่น "สั่งโบว์ ML 10 ชิ้น mini 5 ชิ้น ดอกไม้ 3" ให้ใส่ทีละแบบลงใน items
+  (items[].name = แบบของโบว์, items[].note = สี/รายละเอียดของแบบนั้น, items[].qty = จำนวนชิ้น,
+   items[].unit_price = ราคาต่อชิ้นถ้าบอกมา ไม่บอกใส่ 0) แล้วปล่อย order.style เป็น ""
+  คำบอกใบ้คือ "สั่งโบว์" "รายการ" "จดรายการ" "รับรายการ" — เป็นการจดว่าลูกค้าสั่งอะไร
+  ต่างจาก create_job ที่ขึ้นต้นด้วย "เพิ่มงาน/สร้างงาน" และต่างจาก create_doc ที่ขอเอกสาร
+  ต่างจาก receive_stock ที่เป็นของเข้าสต๊อก ("รับเข้า")
+  คำว่า "รายการ" กับ "ออเดอร์" ใช้แทนกันได้ทั้งคู่หมายถึงรายการโบว์ในสมุดนี้ — "รายการ 24 ..." "ออเดอร์ 24 ..."
+  ที่มีเลขตามหลังและไม่มีคำว่า "รายจ่าย" คือรายการโบว์เสมอ ไม่ใช่รายจ่าย (รายจ่ายต้องมีคำว่า "รายจ่าย")
+- แก้หรือเติมรายการที่จดไว้ เช่น "รายการ 24 สีแดงทอง" "รายการ 24 ราคา 3200"
+  "รายการ 24 เปลี่ยนเป็น FB" "รายการ 24 ผู้สั่งคุณบี" "แก้รายการ 24 เป็นแบบ ML" = edit_order
+  (order.id = เลขรายการ แล้วใส่เฉพาะช่องที่ผู้ใช้บอกว่าจะแก้ ช่องอื่นใส่ "" หรือ 0
+   ระบบจะใช้ค่าเดิมให้เอง ห้ามเดาค่าเดิมมาใส่
+   สี/ขนาด/ข้อความที่ไม่บอกว่าเป็นช่องไหน ให้ถือเป็น order.detail)
+  แจ้งว่าจ่ายแล้ว เช่น "รายการ 24 จ่ายแล้ว" "รายการ 24 โอนแล้ว" = edit_order + order.paid = "paid"
+  "รายการ 24 ยังไม่จ่าย" = order.paid = "unpaid" ไม่พูดถึงการจ่ายให้ใส่ ""
+  ค่าจ้างทำโบว์ (เงินที่ร้านจ่ายให้ช่างทำโบว์ คนละเรื่องกับราคาที่ลูกค้าจ่าย) เช่น "รายการ 24 ค่าจ้าง 150"
+  = order.wage = 150, "รายการ 24 จ่ายค่าจ้างแล้ว" = order.wage_paid = "paid",
+  "รายการ 24 ยังไม่จ่ายค่าจ้าง" = order.wage_paid = "unpaid"
+  ถ้าพูดว่า "จ่ายแล้ว" เฉยๆ ไม่มีคำว่าค่าจ้าง = order.paid (ลูกค้าจ่าย) ไม่ใช่ wage_paid
+  มัดจำ = ลูกค้าจ่ายมาบางส่วน เช่น "รายการ 24 มัดจำ 1000" = order.deposit = 1000 (ไม่ใช่ order.paid — paid คือจ่ายครบ)
+  ส่งของ เช่น "รายการ 24 ส่งแล้ว" = order.shipped = "shipped", "รายการ 24 ยังไม่ส่ง" = "unshipped" (คนละเรื่องกับจ่ายเงิน)
+  ตอนสั่งใหม่บอกค่าจ้างมาด้วยก็ได้ เช่น "สั่งโบว์ ML 10 ชิ้น ค่าจ้างชิ้นละ 150" = add_order + order.wage = 150
+  ต่างจาก add_order ตรงที่มีเลขรายการอ้างอยู่ — ไม่มีเลขเมื่อไหร่คือ add_order
+  เลขที่ตามหลังคำว่า "รายการ" คือเลขรายการ (order.id) เสมอ ห้ามอ่านเป็นจำนวนชิ้น แม้จะขึ้นต้นว่า "สั่งใหม่"
+  เช่น "สั่งใหม่ รายการ 7 แบบที่ 2 ราคา 3000" = edit_order order.id = 7 ไม่ใช่ add_order qty 7
+  จำนวนชิ้นต้องมีคำว่า ชิ้น/อัน/ตัว ต่อท้ายเลขเท่านั้น
+- ลบ/ยกเลิกรายการ เช่น "ลบรายการ 24" "ยกเลิกรายการ 24 ลูกค้าเปลี่ยนใจ" = void_order
+  (order.id = เลขรายการ, เหตุผลใส่ note)
+- ขอดูรายการ เช่น "รายการเดือนนี้" "ดูรายการ" "ตารางรายการ" "รายการเดือนตุลา" = list_orders
+  (ถามเดือนอื่นที่ไม่ใช่เดือนนี้ ให้ใส่ order.order_date เป็นวันที่ 1 ของเดือนนั้น ไม่งั้นใส่ "")
 - เพิ่มวันหยุด = add_holiday (holiday.date + holiday.name)
 - ขอดูคำสั่ง/ช่วยด้วย = help
 - อ่านไม่ออกหรือไม่เข้าข้อไหน = unknown

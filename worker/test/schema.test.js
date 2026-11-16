@@ -48,5 +48,6 @@ test('intent ครอบคลุมทุกคำสั่งที่ handle
     'help', 'job_from_doc', 'list_jobs', 'list_stock', 'month_summary', 'receive_stock',
     'search', 'set_price', 'ship_job', 'unknown', 'update_job', 'void_doc',
     'void_expense', 'edit_expense',
+    'add_order', 'edit_order', 'void_order', 'list_orders',
   ].sort());
 });

@@ -1,8 +1,9 @@
 // หน้าหลังบ้านสำหรับมือถือ — 5 แท็บ งาน / เอกสาร / สต๊อก / รายจ่าย / สรุป
 // ไม่มีระบบ login ในนี้ ตั้งใจให้ Cloudflare Access กั้นหน้า /admin จากข้างนอก
 import { TYPES, EXPENSE_CATEGORIES, LEAD_STATUSES, getSeller, splitIncome, roleOf } from './config.js';
-import { thaiDateShort, thaiDate, thaiMonth, thaiMonthShort, fmtBaht } from './thai.js';
+import { thaiDateShort, thaiDate, thaiMonth, thaiMonthShort, dayMonth, fmtBaht } from './thai.js';
 import { esc } from './render.js';
+import { summarizeOrders } from './order-sheet.js';
 import { C, CHART_CSS, monthlyBars, hBars, legend, signed } from './chart.js';
 
 const CSS = `
@@ -12,9 +13,9 @@ body{background:var(--bg);font-family:'Sarabun',sans-serif;color:var(--ink);font
 header{position:sticky;top:0;z-index:10;background:linear-gradient(90deg,var(--wine),var(--wine2) 70%,var(--gold));color:#fff;padding:14px 16px 0}
 header h1{font-size:18px;font-weight:600;letter-spacing:.5px}
 header .date{font-size:12px;opacity:.85;margin-bottom:10px}
-nav{display:flex;gap:4px}
-/* 5 แท็บต้องพอดีจอ 360px จึงบีบ font กับ padding ลง ไม่ให้ตกบรรทัด */
-nav a{flex:1;min-width:0;text-align:center;padding:9px 2px;font-size:13px;font-weight:500;color:#fff;text-decoration:none;
+nav{display:flex;gap:3px}
+/* 7 แท็บต้องพอดีจอ 360px จึงบีบ font กับ padding ลง ไม่ให้ตกบรรทัด */
+nav a{flex:1;min-width:0;text-align:center;padding:9px 1px;font-size:12px;font-weight:500;color:#fff;text-decoration:none;
   border-radius:8px 8px 0 0;background:rgba(0,0,0,.18);white-space:nowrap}
 nav a.on{background:var(--bg);color:var(--wine);font-weight:600}
 /* หน้านี้ทำมาเพื่อมือถือ บนจอกว้างจึงจัดเป็นคอลัมน์เดียวกลางจอ
@@ -62,11 +63,22 @@ details.nums th,details.nums td{padding:4px 0;text-align:right;border-bottom:1px
 details.nums th:first-child,details.nums td:first-child{text-align:left}
 details.nums th{font-weight:500;color:var(--mute)}
 details.nums td{font-variant-numeric:tabular-nums}
+/* ตารางรายการ — หกช่องไม่พอดีจอมือถือ จึงให้เลื่อนซ้ายขวาได้ในกรอบของตัวเอง ไม่ดันทั้งหน้า */
+.otable{background:#fff;border:1px solid var(--line);border-radius:12px;overflow-x:auto;margin-bottom:12px}
+.otable table{width:100%;min-width:760px;border-collapse:collapse;font-size:13px}
+.otable .paid{text-align:center;color:#15803D;font-weight:700}
+.otable th{background:var(--soft);color:var(--wine);font-weight:600;text-align:left;padding:8px 9px;white-space:nowrap;border-bottom:1px solid var(--line)}
+.otable td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+.otable tr:last-child td{border-bottom:0}
+.otable .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.otable .id{color:var(--mute);white-space:nowrap}
+.otable .style{font-weight:600}
+.otable tr.void td{text-decoration:line-through;opacity:.5}
 ${CHART_CSS}`;
 
-export const TABS = ['jobs', 'docs', 'stock', 'expenses', 'leads', 'summary'];
+export const TABS = ['jobs', 'orders', 'docs', 'stock', 'expenses', 'leads', 'summary'];
 const TAB_LABEL = {
-  jobs: 'งาน', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', leads: 'มุ่งหวัง', summary: 'สรุป',
+  jobs: 'งาน', orders: 'รายการ', docs: 'เอกสาร', stock: 'สต๊อก', expenses: 'รายจ่าย', leads: 'มุ่งหวัง', summary: 'สรุป',
 };
 
 const statusClass = (s) => (s === 'กำลังทำ' ? 'doing' : s === 'รอลูกค้า' ? 'waiting' : '');
@@ -176,6 +188,46 @@ function stockView(rows, value) {
   ${neg ? `<div class="line"><span>ยอดติดลบ</span><b style="color:var(--wine)">${neg} รายการ</b></div>` : ''}
 </div>
 ${rows.map(stockCard).join('\n')}`;
+}
+
+/**
+ * ตารางรายการโบว์ — หัวเป็นยอดของเดือนนี้ ตารางข้างล่างเป็นรายการล่าสุดย้อนหลังไม่จำกัดเดือน
+ * ที่ยกเลิกแล้วยังโชว์แบบขีดฆ่า ให้เห็นว่าเคยจดอะไรไว้ (หลักเดียวกับรายจ่าย)
+ */
+function ordersView(rows, month) {
+  if (!rows.length) {
+    return '<p class="empty">ยังไม่มีรายการ<br>สั่ง "สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900" ทางไลน์ได้เลย</p>';
+  }
+  // ตัวเลขชุดเดียวกับหน้า A4 และคำตอบในไลน์ (summarizeOrders) จะได้ไม่มีสามที่สามยอด
+  const s = summarizeOrders(month);
+  // ช่องที่ยังไม่มีข้อมูลเว้นว่าง ไม่ใส่ขีด — ตอนเพิ่งสั่งของมาตารางว่างเกือบทั้งหน้า (เหมือนหน้า A4)
+  const v = (x) => (x == null ? '' : esc(x));
+  const m = (x) => (x != null ? fmtBaht(x) : '');
+  return `<div class="sum">
+  <h2>รายการเดือนนี้</h2>
+  <div class="line"><span>จำนวน</span><b>${s.count} ชิ้น</b></div>
+  <div class="line"><span>ยังไม่มีผู้สั่ง</span><b>${s.free} ชิ้น</b></div>
+  ${s.noPrice ? `<div class="line"><span>ยังไม่ใส่ราคา</span><b>${s.noPrice} ชิ้น</b></div>` : ''}
+</div>
+<div class="sum">
+  <h2>ราคาขาย (ลูกค้าจ่าย)</h2>
+  <div class="line"><span>รวมทั้งหมด</span><b>${fmtBaht(s.price)}</b></div>
+  <div class="line"><span>จ่ายแล้ว <em>${s.paidCount} ชิ้น</em></span><b>${fmtBaht(s.pricePaid)}</b></div>
+  <div class="line"><span>ยังไม่จ่าย <em>${s.count - s.paidCount} ชิ้น</em></span><b>${fmtBaht(s.price - s.pricePaid)}</b></div>
+</div>
+<div class="sum">
+  <h2>ค่าจ้างทำโบว์ (จ่ายช่าง)</h2>
+  <div class="line"><span>รวมทั้งหมด</span><b>${fmtBaht(s.wage)}</b></div>
+  <div class="line"><span>จ่ายแล้ว <em>${s.wagePaidCount} ชิ้น</em></span><b>${fmtBaht(s.wagePaid)}</b></div>
+  <div class="line"><span>ค้างจ่าย <em>${s.count - s.wagePaidCount} ชิ้น</em></span><b>${fmtBaht(s.wage - s.wagePaid)}</b></div>
+  <div class="line grand"><span>ราคาขาย − ค่าจ้าง</span><b>${fmtBaht(s.price - s.wage)}</b></div>
+</div>
+<div class="otable"><table>
+<thead><tr><th>#</th><th>แบบโบว์</th><th>รายละเอียด</th><th>ช่องทาง</th><th>ผู้สั่ง</th><th class="r">ราคา</th><th>จ่ายแล้ว</th><th class="r">ค่าจ้างทำ</th><th>จ่ายแล้ว</th></tr></thead>
+<tbody>
+${rows.map((o) => `<tr${o.status === 'void' ? ' class="void"' : ''}><td class="id">${o.id} · ${dayMonth(o.order_date)}</td><td class="style">${esc(o.style)}</td><td>${v(o.detail)}</td><td>${v(o.channel)}</td><td>${v(o.customer)}</td><td class="r">${m(o.price)}</td><td class="paid">${o.paid_at ? '✓' : ''}</td><td class="r">${m(o.wage)}</td><td class="paid">${o.wage_paid_at ? '✓' : ''}</td></tr>`).join('\n')}
+</tbody>
+</table></div>`;
 }
 
 function expenseCard(e) {
@@ -321,7 +373,7 @@ ${blocks}
 ${s.voidCount ? `<div class="sum"><h2>ยกเลิก</h2><div class="line"><span>เอกสารที่ยกเลิก (ไม่นับในยอด)</span><b>${s.voidCount} ใบ</b></div></div>` : ''}`;
 }
 
-export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend, leads, monthLead }) {
+export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVal, expenses, monthExp, trend, leads, monthLead, orders, monthOrd }) {
   let body;
   if (tab === 'jobs') {
     body = jobs.length ? jobs.map((j) => jobCard(j, today)).join('\n') : '<p class="empty">ไม่มีงานค้าง 🎉</p>';
@@ -335,6 +387,8 @@ export function renderAdmin({ tab, today, jobs, docs, summary, q, stock, stockVa
   <button type="submit">ค้นหา</button>
 </form>
 ${list}`;
+  } else if (tab === 'orders') {
+    body = ordersView(orders || [], monthOrd || []);
   } else if (tab === 'stock') {
     body = stockView(stock || [], stockVal);
   } else if (tab === 'expenses') {

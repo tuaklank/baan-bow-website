@@ -2,7 +2,7 @@
 import {
   TYPES, SELLERS, JOB_STATUSES, JOB_DEFAULT_DUE_DAYS, WHT_ALLOWED_BP,
   STOCK_ALLOW_NEGATIVE, EXPENSE_CATEGORIES, getSeller, sellerCanIssue,
-  splitIncome, roleOf, LEAD_STATUSES, LEAD_WORD_TO_STATUS,
+  splitIncome, roleOf, LEAD_STATUSES, LEAD_WORD_TO_STATUS, normalizeChannel,
 } from './config.js';
 import { compute, toSatang } from './money.js';
 import { parseDocNo } from './numbering.js';
@@ -15,14 +15,21 @@ import {
   findProduct, productKey, upsertProduct, receiveStock, listStock, stockOf,
   addStockMove, stockMovesOfJob, productsByKeys, stockValue,
   addExpense, monthExpenses, expenseById, voidExpense, replaceExpense,
+  addOrder, addOrders, orderById, updateOrder, voidOrder, monthOrders, orderSheetToken,
+  ordersByIds, updateOrdersBulk, voidOrderRows, maxOrderId, addOrderAt, saveOrderUndo, nextOrderUndo, markOrderUndo, orderUndoCounts,
 } from './db.js';
 import { readVatMode, parseTaxId } from './text.js';
 import { readDraftEdit, draftToBase, isEditError, isNotAnEdit, looksLikeEdit, EDIT_HELP } from './draft.js';
 import { huntLead } from './leads.js';
 import { push } from './line.js';
+import { summarizeOrders, orderRemaining } from './order-sheet.js';
+import {
+  ORDER_HELP, ORDER_MAX_PER_COMMAND, readOrderIds, orderIdList,
+  parseOrderEdit, parseOrderView, parseOrderVoid, filterOrders, orderViewTitle, styleName, SYES, SNO,
+} from './order-text.js';
 import {
   todayBkk, monthBkk, addDays, dayOfWeek, isValidYmd, readThaiDate,
-  thaiDate, thaiMonth, fmtBaht,
+  thaiDate, thaiDateNum, dayMonth, thaiMonth, fmtBaht,
 } from './thai.js';
 
 const QT_VALID_DAYS = 15;   // ใบเสนอราคายืนราคา 15 วันนับจากวันที่ออก
@@ -63,6 +70,19 @@ export const HELP = `คำสั่งที่ใช้ได้
 • ค่าส่ง 60 Kerry   /   ค่าแรง 300 พี่หน่อย   /   ค่าเช่า 3500
 • ยกเลิกรายจ่าย 12               (ลงผิด — ยกเลิก ไม่ลบ ประวัติยังอยู่)
 • แก้รายจ่าย 12 ค่าส่ง 80         (ยกเลิกของเดิมแล้วลงใหม่ ไม่ทับของเดิม)
+
+📌 รายการโบว์ (สมุดจดว่าใครสั่งอะไร)
+• สั่งโบว์ ML แดงทอง 10 ชิ้น mini 5 ชิ้น      (สั่งมาไว้ก่อน ชิ้นละแถว เติมเลขที่ว่างก่อน)
+• รายการ 6 แบบ ML รายละเอียด แดงทอง ราคา 3000   (จดลงเลขที่ว่าง หรือเลขถัดไป)
+• สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900   (มีลูกค้าแล้วก็จดครบได้เลย)
+• รายการ 24 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900   (แก้ = รายการ + เลข + ชื่อช่อง + ค่าใหม่)
+• รายการ 24 จ่ายแล้ว   /   รายการ 8-12 จ่ายแล้ว              (ลูกค้าจ่าย)
+• รายการ 1-10 ค่าจ้าง 150   /   รายการ 1-10 จ่ายค่าจ้างแล้ว    (ค่าจ้างทำโบว์)
+• รายการ 24 มัดจำ 1000   /   รายการ 24 ส่งแล้ว             (มัดจำ และส่งของแล้ว)
+• ลบรายการ 24   /   ลบรายการ 9-23   (ยกเลิก ไม่ลบ ประวัติยังอยู่)
+• ย้อนกลับ   /   เดินหน้า          (ย้อนคำสั่งรายการทีละคำสั่ง ย้อนเกินก็เดินหน้ากลับมาได้)
+• ตารางรายการ                   (ลิงก์ตาราง A4 ของเดือนนี้ เปิดดูหรือบันทึก PDF ได้)
+• วิธีสั่งรายการ                  (รูปแบบคำสั่งแก้ไขและเรียกดูทั้งหมด)
 
 🔎 ลูกค้ามุ่งหวัง (ค้นเฉพาะตอนสั่ง ไม่มีรอบอัตโนมัติ)
 • หาลูกค้า                       (ค้นให้ 1 เจ้า ใช้เวลา 1-3 นาที)
@@ -167,11 +187,35 @@ function docSummary(d) {
   return parts.filter((x) => x !== null).join('\n');
 }
 
+/** ยาวที่สุดที่ยังจบในบรรทัดเดียวบนมือถือ เกินนี้ไลน์จะตัดขึ้นบรรทัดใหม่เอง */
+const JOB_LINE_MAX = 42;
+const JOB_STATUS_DEFAULT = 'รอดำเนินการ';
+
+/** ตัดชื่องานให้จบในบรรทัดเดียว ตัดตรงช่องว่างถ้าพอมี จะได้ไม่ขาดกลางคำ */
+function clipTitle(text, max) {
+  const t = String(text ?? '').trim();
+  if (t.length <= max) return t;
+  if (max < 4) return t.slice(0, Math.max(1, max));
+  const cut = t.slice(0, max - 1);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > max * 0.6 ? cut.slice(0, sp) : cut.trimEnd()) + '…';
+}
+
+/**
+ * รายการงานค้าง งานละหนึ่งบรรทัด ด่วนก่อนตามลำดับที่ openJobs เรียงมาให้แล้ว
+ * ไม่พิมพ์สถานะ "รอดำเนินการ" เพราะงานค้างเกือบทั้งหมดอยู่สถานะนั้น บอกไปก็กินที่เปล่า
+ * วันที่ใช้แบบ 23/10 เพราะปีเดาได้จากบริบท และวันที่เลย/ครบวันนี้แทนด้วยอีโมจิแทนคำ
+ */
 export function jobListText(rows, today, heading) {
   if (!rows.length) return 'ไม่มีงานค้าง 🎉';
   const body = rows.map((r) => {
-    const tag = !r.due_date ? '' : r.due_date < today ? ' ❗เลยกำหนด' : r.due_date === today ? ' ⏰ครบวันนี้' : '';
-    return `#${r.id} ${r.title} [${r.status}] ${r.due_date ? thaiDate(r.due_date) : 'ไม่มีกำหนด'}${tag}`;
+    const due = !r.due_date ? 'ไม่มีกำหนด'
+      : r.due_date < today ? `❗${dayMonth(r.due_date)}`
+      : r.due_date === today ? '⏰วันนี้'
+      : dayMonth(r.due_date);
+    const head = `📌 #${r.id} `;
+    const tail = `${r.status && r.status !== JOB_STATUS_DEFAULT ? ` ·${r.status}` : ''} ${due}`;
+    return head + clipTitle(r.title, JOB_LINE_MAX - head.length - tail.length) + tail;
   }).join('\n');
   return `${heading}\n${body}`;
 }
@@ -1013,6 +1057,565 @@ async function doEditExpense(env, uid, cmd) {
     + 'พิมพ์ "ยืนยัน" เพื่อแก้';
 }
 
+// ---------- รายการโบว์ ----------
+
+/** ลิงก์หน้าตารางรายการของเดือนนั้น — หน้าเดียวกับที่เปิดดูหรือบันทึกเป็น PDF */
+const orderSheetUrl = async (env, ym) => `${env.BASE_URL || ''}/d/${await orderSheetToken(env.DB, ym)}`;
+
+const orderPrice = (o) => (o.price != null ? fmtBaht(o.price) + ' บาท' : '-');
+
+/** รายการหนึ่งใบแบบอ่านทีละช่อง ใช้ตอนตอบหลังจด/แก้/ถามยืนยันลบ */
+const orderCard = (o) => [
+  `แบบ: ${o.style}`,
+  `รายละเอียด: ${o.detail ?? '-'}`,
+  `ช่องทาง: ${o.channel ?? '-'}`,
+  `ผู้สั่ง: ${o.customer ?? '-'}`,
+  `ราคา: ${orderPrice(o)}`,
+  `มัดจำ: ${o.deposit != null ? `${fmtBaht(o.deposit)} บาท (คงเหลือ ${fmtBaht(orderRemaining(o) ?? 0)})` : '-'}`,
+  `จ่ายแล้ว: ${o.paid_at ? '✓' : '-'}`,
+  `ส่งแล้ว: ${o.shipped_at ? '✓' : '-'}`,
+  `ค่าจ้างทำ: ${o.wage != null ? fmtBaht(o.wage) + ' บาท' : '-'}${o.wage_paid_at ? ' (จ่ายแล้ว ✓)' : ''}`,
+].join('\n');
+
+/** "paid" / "จ่ายแล้ว" / "โอนแล้ว" -> true, "unpaid" / "ยังไม่จ่าย" -> false, ไม่พูดถึง -> null */
+function readPaid(text) {
+  const t = String(text ?? '').trim().toLowerCase();
+  if (!t) return null;
+  if (/unpaid|ยังไม่|ไม่ได้จ่าย|ค้าง/.test(t)) return false;
+  if (/paid|จ่าย|โอน|ชำระ/.test(t)) return true;
+  return null;
+}
+
+/** "shipped" / "ส่งแล้ว" -> true, "unshipped" / "ยังไม่ส่ง" -> false, ไม่พูดถึง -> null */
+function readShipped(text) {
+  const t = String(text ?? '').trim().toLowerCase();
+  if (!t) return null;
+  if (/unshipped|ยังไม่/.test(t)) return false;
+  if (/shipped|ส่ง/.test(t)) return true;
+  return null;
+}
+
+/**
+ * เลขรายการที่จะแก้/ลบ — AI ใส่มาที่ order.id
+ * เผื่อมาทาง job.ref หรือ query ด้วย เพราะ "รายการ 24 ..." บางทีถูกอ่านเป็นเลขงานหรือคำค้น
+ */
+function orderRef(cmd) {
+  const n = Number(cmd.order?.id || 0);
+  if (n > 0) return Math.round(n);
+  const m = String(cmd.job?.ref ?? cmd.query ?? '').match(/[0-9]+/);
+  return m ? Number(m[0]) : 0;
+}
+
+export async function doAddOrder(env, cmd, uid = null) {
+  const db = env.DB;
+  const o = cmd.order || {};
+  const order_date = isValidYmd(o.order_date) ? o.order_date : todayBkk();
+  const sharedPrice = o.price > 0 ? toSatang(o.price) : null;
+
+  // สั่งหลายแบบในข้อความเดียวมาทาง items (แบบละบรรทัด) สั่งแบบเดียวมาทาง order.style
+  const lines = (cmd.items?.length
+    ? cmd.items.map((i) => ({
+      style: i.name, detail: i.note ?? o.detail ?? null, qty: Math.round(i.qty) || 1,
+      price: i.unit_price > 0 ? toSatang(i.unit_price) : sharedPrice,
+    }))
+    : o.style ? [{ style: o.style, detail: o.detail ?? null, qty: o.qty > 0 ? o.qty : 1, price: sharedPrice }] : []
+  ).filter((l) => l.style && l.qty > 0);
+
+  // แบบโบว์เป็นช่องเดียวที่บังคับ ช่องอื่นเว้นไว้เติมทีหลังได้ — สั่งของมาไว้ก่อนยังไม่มีลูกค้าก็จดได้เลย
+  if (!lines.length) return 'โบว์แบบไหนครับ เช่น "สั่งโบว์ ML แดงทอง 10 ชิ้น" หรือ "สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900"';
+
+  const pieces = lines.reduce((a, l) => a + l.qty, 0);
+  if (pieces > ORDER_MAX_PER_COMMAND) {
+    return `รวม ${pieces} ชิ้น เกินที่จดได้ต่อครั้ง (${ORDER_MAX_PER_COMMAND} ชิ้น) — พิมพ์เลขเกินหรือเปล่าครับ\nถ้าตั้งใจ ให้แบ่งจดเป็นหลายข้อความ`;
+  }
+
+  const shared = {
+    order_date,
+    wage: o.wage > 0 ? toSatang(o.wage) : null,
+    channel: normalizeChannel(o.channel),
+    // ชื่อคนสั่งบางทีถูกอ่านไปลงช่องลูกค้าของเอกสาร ให้หยิบมาใช้ได้
+    customer: o.customer ?? cmd.customer?.name ?? null,
+  };
+
+  // เลขที่ถูกลบไปแล้วเอากลับมาใช้ก่อน เรียงจากเลขน้อย แล้วค่อยออกเลขใหม่ต่อท้าย
+  // เจ้าของร้านมองเลขเป็นลำดับ 1 2 3 ในสมุด ลบข้อ 6 แล้วจดใหม่ต้องได้ข้อ 6 ไม่ใช่กระโดดไป 24
+  // แถวเดิมที่ถูกลบไม่หายไปไหน — ประวัติของมันอยู่ใน bow_order_events และย้อนกลับได้
+  const pool = await voidOrderRows(db, pieces);
+  const before = [], created = [], all = [], done = [];
+  for (const l of lines) {
+    const fresh = { ...BLANK_ORDER, ...shared, style: l.style, detail: l.detail, price: l.price };
+    const reuse = pool.splice(0, l.qty);
+    const ids = reuse.map((r) => r.id);
+    if (reuse.length) {
+      await updateOrdersBulk(db, reuse.map((r) => ({
+        id: r.id, changes: { ...fresh, status: 'recorded', void_reason: null, voided_at: null },
+        text: `จดใหม่ทับเลขที่ลบไว้ — ของเดิม: ${r.style}${r.customer ? ' · ' + r.customer : ''}`,
+      })), { anyStatus: true });
+      before.push(...reuse);
+    }
+    if (l.qty > reuse.length) {
+      const { first, last } = await addOrders(db, fresh, l.qty - reuse.length);
+      for (let i = first; i <= last; i++) { ids.push(i); created.push(i); }
+    }
+    all.push(...ids);
+    done.push(`${orderIdList(ids)} ${l.style}${l.detail ? ' ' + l.detail : ''} ×${l.qty}`
+      + (l.price != null ? ` · ${fmtBaht(l.price)}` : ''));
+  }
+  await rememberOrderUndo(db, uid, `จดรายการ ${orderIdList(all)}${pieces > 1 ? ` (${pieces} ชิ้น)` : ''}`, { created, before });
+
+  if (pieces > 1) {
+    const firstId = Math.min(...all);
+    return `📌 จดรายการ ${pieces} ชิ้น · ${thaiDateNum(order_date)}\n${done.join('\n')}\n\n`
+      + (shared.customer ? '' : `ช่องทางกับผู้สั่งว่างไว้ก่อน มีคนสั่งแล้วเติมได้ เช่น "รายการ ${firstId} ผู้สั่ง คุณเอ ช่องทาง Line"\n`)
+      + `ลูกค้าจ่ายแล้วพิมพ์ "รายการ ${firstId} จ่ายแล้ว"\n`
+      + (shared.wage != null
+        ? `ค่าจ้างทำชิ้นละ ${fmtBaht(shared.wage)} — จ่ายช่างแล้วพิมพ์ "รายการ ${firstId} จ่ายค่าจ้างแล้ว"\n`
+        : `ใส่ค่าจ้างทำได้ เช่น "รายการ ${firstId} ค่าจ้าง 150"\n`)
+      + (uid ? 'จดผิด พิมพ์ "ย้อนกลับ" ได้เลย\n' : '')
+      + `ตาราง: ${await orderSheetUrl(env, order_date.slice(0, 7))}`;
+  }
+
+  const row = await orderById(db, all[0]);
+  const missing = [
+    row.channel ? null : 'ช่องทาง', row.detail ? null : 'รายละเอียด',
+    row.customer ? null : 'ผู้สั่ง', row.price != null ? null : 'ราคา',
+  ].filter(Boolean);
+
+  return `📌 จดรายการ #${row.id} · ${thaiDateNum(row.order_date)}\n${orderCard(row)}\n\n`
+    + (missing.length
+      ? `ยังไม่มี: ${missing.join(', ')} — เติมได้ เช่น "รายการ ${row.id} รายละเอียด แดงทอง"\n`
+      : `แก้ได้ เช่น "รายการ ${row.id} ราคา 3200"\n`)
+    + `ตาราง: ${await orderSheetUrl(env, row.order_date.slice(0, 7))}`;
+}
+
+/** ช่องข้อมูลของแถวเปล่า — จดทับเลขที่ลบไว้ต้องล้างของเดิมทุกช่อง ไม่ให้ชื่อลูกค้าเก่าหรือติ๊กจ่ายเก่าค้างมา */
+const BLANK_ORDER = {
+  channel: null, detail: null, customer: null, price: null, deposit: null, paid_at: null, shipped_at: null,
+  wage: null, wage_paid_at: null,
+};
+
+const ORDER_LABEL = {
+  style: 'แบบ', channel: 'ช่องทาง', detail: 'รายละเอียด', customer: 'ผู้สั่ง', price: 'ราคา', order_date: 'วันที่',
+  paid_at: 'จ่ายแล้ว', wage: 'ค่าจ้างทำ', wage_paid_at: 'จ่ายค่าจ้างแล้ว', deposit: 'มัดจำ', shipped_at: 'ส่งแล้ว',
+};
+const orderShow = (k, v) => (v == null ? '-'
+  : k === 'price' || k === 'wage' || k === 'deposit' ? fmtBaht(v)
+    : k === 'order_date' ? thaiDateNum(v)
+      : k === 'paid_at' || k === 'wage_paid_at' || k === 'shipped_at' ? '✓' : v);
+
+/**
+ * คำสั่งที่ทำกับหลายรายการพร้อมกัน อ่านจากข้อความตรงๆ ไม่ผ่าน AI
+ * เพราะพิมพ์บ่อยที่สุด รูปแบบตายตัว และ AI อ่านได้ทีละรายการเดียว
+ *   รายการ 8 9 12 จ่ายแล้ว            ลูกค้าจ่ายค่าโบว์
+ *   รายการ 1-10 ค่าจ้าง 150           ใส่ค่าจ้างทำชิ้นละ 150 (ต่อท้าย "จ่ายแล้ว" ได้)
+ *   รายการ 1-10 จ่ายค่าจ้างแล้ว       จ่ายค่าจ้างให้ช่างแล้ว
+ * "จ่ายแล้ว" เฉยๆ = ลูกค้าจ่าย; เรื่องค่าจ้างต้องมีคำว่า "ค่าจ้าง" เสมอ กันสองช่องปนกัน
+ * คืน null ถ้าข้อความไม่ใช่รูปนี้ ให้ไหลไปทางปกติ
+ */
+export async function doMarkPaid(env, msg, uid = null) {
+  const m = String(msg).match(/^(?:รายการ|ออเดอร์)\s*#?\s*([\d\s,#\-–]+?)\s*([^\d\s,#\-–].*?)(?:\s*(?:ครับ|ค่ะ|คะ))?$/u);
+  if (!m) return null;
+  // "ลูกค้าจ่ายแล้ว" = "จ่ายแล้ว" — พิมพ์ให้ชัดว่าใครจ่ายก็ได้
+  const rest = m[2].trim().replace(/^ลูกค้า(?=จ่าย|โอน|ชำระ|ยังไม่)/u, '');
+
+  const yes = '(?:จ่ายแล้ว|จ่ายเงินแล้ว|โอนแล้ว|ชำระแล้ว)';
+  const no = '(?:ยังไม่จ่าย|ยังไม่ได้จ่าย|ยังไม่โอน)';
+  let field, paid, wage = null;
+  let w;
+  if ((w = rest.match(new RegExp(`^ค่าจ้าง(?:ทำ)?(?:โบว์)?(?:ชิ้นละ)?\\s*([\\d,]+(?:\\.\\d+)?)\\s*(?:บาท|บ\\.?)?\\s*(${yes}|${no})?$`, 'u')))) {
+    field = 'wage_paid_at';
+    wage = toSatang(Number(w[1].replace(/,/g, '')));
+    paid = w[2] ? readPaid(w[2]) : null;
+  } else if (new RegExp(`^(?:จ่ายค่าจ้าง(?:ทำ)?(?:โบว์)?แล้ว|ค่าจ้าง(?:ทำ)?(?:โบว์)?\\s*${yes})$`, 'u').test(rest)) {
+    [field, paid] = ['wage_paid_at', true];
+  } else if (new RegExp(`^(?:ยังไม่(?:ได้)?จ่ายค่าจ้าง(?:ทำ)?(?:โบว์)?|ค่าจ้าง(?:ทำ)?(?:โบว์)?\\s*${no})$`, 'u').test(rest)) {
+    [field, paid] = ['wage_paid_at', false];
+  } else if (new RegExp(`^(?:${yes}|${no})$`, 'u').test(rest)) {
+    [field, paid] = ['paid_at', readPaid(rest)];
+  } else if (new RegExp(`^(?:${SYES}|${SNO})$`, 'u').test(rest)) {
+    [field, paid] = ['shipped_at', !/ยังไม่/.test(rest)];   // ส่งของให้ลูกค้าแล้ว — คนละช่องกับเรื่องเงิน
+  } else return null;
+  const what = { paid_at: 'จ่ายแล้ว', wage_paid_at: 'จ่ายค่าจ้างแล้ว', shipped_at: 'ส่งแล้ว' }[field];
+
+  const got = readOrderIds(m[1]);
+  if (got.error) return got.error;
+  if (!got.ids.length) return null;
+
+  const today = todayBkk();
+  const res = await applyOrderChanges(env.DB, uid, got.ids, (row) => {
+    const want = {};
+    if (wage != null) want.wage = wage;
+    if (paid != null && Boolean(row[field]) !== paid) want[field] = paid ? today : null;
+    return want;
+  });
+
+  const did = [
+    wage != null ? `ใส่ค่าจ้างทำชิ้นละ ${fmtBaht(wage)}` : null,
+    paid === true ? `ติ๊ก${what}` : paid === false ? `เอาติ๊ก${what}ออก` : null,
+  ].filter(Boolean).join(' + ');
+  return orderEditReply(res, `${paid === false ? '↩️' : '✅'} ${did} ${res.done.length} รายการ: ${orderIdList(res.done)}`);
+}
+
+/**
+ * ลงการแก้กับหลายรายการ — wantOf(row) คืนค่าที่อยากให้เป็น แล้วที่นี่เทียบกับของเดิมเอง
+ * แยกผลเป็น done (แก้แล้ว) / same (เป็นแบบนั้นอยู่แล้ว) / bad (ไม่พบหรือถูกลบ)
+ * อ่านและเขียนรวมเป็นไม่กี่คำสั่งฐานข้อมูล ไม่วนทีละแถว (ดู updateOrdersBulk)
+ */
+async function applyOrderChanges(db, uid, ids, wantOf, { create = null } = {}) {
+  const rows = new Map((await ordersByIds(db, ids)).map((r) => [r.id, r]));
+  const done = [], same = [], bad = [], filled = [], needStyle = [], gap = [], items = [], before = [], created = [];
+  let nextNew = create ? (await maxOrderId(db)) + 1 : 0;
+  for (const id of [...ids].sort((a, b) => a - b)) {
+    const row = rows.get(id);
+    const isVoid = row?.status === 'void';
+
+    // เลขที่ว่างอยู่ (ถูกลบไปแล้ว หรือเป็นเลขถัดไปที่ยังไม่เคยมี) — จดเป็นรายการใหม่ลงเลขนั้นเลย
+    // เจ้าของร้านมองเลขเป็นลำดับในสมุด "รายการ 6 ..." คือเขียนลงบรรทัดที่ 6 ไม่ว่าบรรทัดนั้นจะเคยถูกลบหรือไม่
+    if (!row || isVoid) {
+      if (!create) { bad.push(id); continue; }
+      // เลขใหม่ต้องต่อจากเลขสุดท้ายพอดี — พิมพ์ 60 แทน 6 จะได้ไม่เกิดช่องว่างกลางสมุด
+      // เช็กก่อนเรื่องแบบโบว์ ไม่งั้นจะไปบอกว่าเลข 60 "ว่างอยู่" ทั้งที่ยังไม่ถึงเลขนั้น
+      if (!row && id !== nextNew) { gap.push(id); continue; }
+      const want = wantOf({ paid_at: null, wage_paid_at: null });
+      if (!want.style) { needStyle.push(id); continue; }
+      const fresh = { ...BLANK_ORDER, order_date: create.today, ...want };
+      if (isVoid) {
+        // ล้างของเดิมทุกช่อง ไม่ให้ข้อมูลของแถวที่ลบไปแล้วค้างมาปนกับของใหม่
+        items.push({
+          id, changes: { ...fresh, status: 'recorded', void_reason: null, voided_at: null },
+          text: `จดใหม่ทับเลขที่ลบไว้ — ของเดิม: ${row.style}${row.customer ? ' · ' + row.customer : ''}`,
+        });
+        before.push(row);
+      } else {
+        await addOrderAt(db, id, fresh);
+        nextNew++;
+        created.push(id);
+      }
+      filled.push(id);
+      done.push(id);
+      continue;
+    }
+
+    const want = wantOf(row);
+    const changes = {};
+    const notes = [];
+    for (const k of Object.keys(want)) {
+      if (want[k] === undefined || want[k] === row[k]) continue;
+      changes[k] = want[k];
+      notes.push(`${ORDER_LABEL[k]}: ${orderShow(k, row[k])} → ${orderShow(k, want[k])}`);
+    }
+    if (!notes.length) { same.push(id); continue; }
+    items.push({ id, changes, text: notes.join(' | ') });
+    before.push(row);
+    done.push(id);
+  }
+  await updateOrdersBulk(db, items, { anyStatus: Boolean(create) });
+  if (done.length) {
+    await rememberOrderUndo(db, uid, `${filled.length ? 'จดรายการ' : 'แก้รายการ'} ${orderIdList(done)}`, { before, created });
+  }
+  return { done, same, bad, filled, needStyle, gap, nextNew };
+}
+
+/** จำสภาพก่อนคำสั่งนี้ไว้ให้ "ย้อนกลับ" — ไม่รู้ว่าใครสั่ง (เรียกจากเทสต์หรือทางอื่น) ก็ไม่จำ */
+async function rememberOrderUndo(db, uid, label, payload) {
+  if (uid) await saveOrderUndo(db, uid, label, payload);
+}
+
+/**
+ * คำตอบหลังแก้ — สั้นๆ บรรทัดเดียวต่อเรื่อง ไม่แนบการ์ดทั้งใบและไม่แนบลิงก์ตาราง
+ * เจ้าของร้านแก้ติดกันหลายข้อความ ได้ลิงก์เดิมกลับมาทุกครั้งมันรกแชต อยากดูตารางค่อยพิมพ์ "ตารางรายการ"
+ */
+const orderEditReply = (res, doneLine) => [
+  res.done.length ? doneLine : null,
+  res.same.length ? `เป็นแบบนั้นอยู่แล้ว: ${orderIdList(res.same)}` : null,
+  res.bad.length ? `ไม่พบหรือถูกลบแล้ว: ${orderIdList(res.bad)}` : null,
+].filter((x) => x !== null).join('\n');
+
+/**
+ * แก้รายการด้วยแพตเทิร์นตายตัว "รายการ 3 ผู้สั่ง คุณเอ ช่องทาง Line ราคา 2900"
+ * อ่านตรงๆ ไม่เรียก AI (ดู order-text.js) — คืน null ถ้าไม่ใช่แพตเทิร์นนี้
+ */
+export async function doOrderFields(env, msg, uid = null) {
+  const today = todayBkk();
+  const cmd = parseOrderEdit(msg, today);
+  if (!cmd) return null;
+  if (cmd.error) return cmd.error;
+  return runOrderEdit(env, uid, cmd, today);
+}
+
+/**
+ * ลงคำสั่ง {ids, set, paid, wagePaid} — เลขที่มีอยู่ = แก้, เลขที่ว่าง = จดใหม่ลงเลขนั้น
+ * ใช้ร่วมกันทั้งทางแพตเทิร์นตายตัวและทางที่ AI อ่านมา ผลจะได้ไม่ต่างกันตามว่าข้อความไปทางไหน
+ */
+async function runOrderEdit(env, uid, cmd, today) {
+  const res = await applyOrderChanges(env.DB, uid, cmd.ids, (row) => {
+    const want = { ...cmd.set };
+    if (cmd.paid != null && Boolean(row.paid_at) !== cmd.paid) want.paid_at = cmd.paid ? today : null;
+    if (cmd.wagePaid != null && Boolean(row.wage_paid_at) !== cmd.wagePaid) want.wage_paid_at = cmd.wagePaid ? today : null;
+    if (cmd.shipped != null && Boolean(row.shipped_at) !== cmd.shipped) want.shipped_at = cmd.shipped ? today : null;
+    return want;
+  }, { create: { today } });
+
+  const what = [
+    ...Object.keys(cmd.set).map((k) => `${ORDER_LABEL[k]} ${orderShow(k, cmd.set[k])}`),
+    cmd.paid === true ? 'จ่ายแล้ว ✓' : cmd.paid === false ? 'เอาติ๊กจ่ายแล้วออก' : null,
+    cmd.wagePaid === true ? 'จ่ายค่าจ้างแล้ว ✓' : cmd.wagePaid === false ? 'เอาติ๊กจ่ายค่าจ้างออก' : null,
+    cmd.shipped === true ? 'ส่งแล้ว ✓' : cmd.shipped === false ? 'เอาติ๊กส่งแล้วออก' : null,
+  ].filter(Boolean).join(' · ');
+  const n = res.done.length;
+  // จดลงเลขที่ว่างกับแก้ของที่มีอยู่ ปนกันในคำสั่งเดียวได้ — บอกแยกให้เห็นว่าเลขไหนเป็นของใหม่
+  const edited = res.done.filter((id) => !res.filled.includes(id));
+  const head = [
+    res.filled.length ? `📌 จดรายการ ${orderIdList(res.filled)} แล้ว` : null,
+    edited.length ? `✅ แก้รายการ ${orderIdList(edited)} แล้ว` : null,
+  ].filter(Boolean).join(' · ');
+  const eg = res.needStyle[0] ?? res.gap[0];
+  return [
+    n ? `${head}${n > 1 ? ` (${n} ชิ้น)` : ''}\n${what}` : null,
+    res.same.length ? `เป็นแบบนั้นอยู่แล้ว: ${orderIdList(res.same)}` : null,
+    res.needStyle.length
+      ? `รายการ ${orderIdList(res.needStyle)} ยังว่างอยู่ — จดใหม่ต้องบอกแบบโบว์ด้วย\nเช่น "รายการ ${eg} แบบ ML ราคา 3000"` : null,
+    res.gap.length
+      ? `ยังไม่มีรายการ ${orderIdList(res.gap)} — เลขถัดไปคือ ${res.nextNew}\nจดต่อท้ายพิมพ์ "รายการ ${res.nextNew} แบบ ML ราคา 3000"` : null,
+  ].filter((x) => x !== null).join('\n');
+}
+
+/**
+ * แก้/เติมรายการ — แก้ทับแถวเดิมทันทีไม่ต้องยืนยัน เพราะแก้กลับได้ด้วยคำสั่งเดียวกัน
+ * และของเดิมถูกเก็บไว้ในประวัติ (bow_order_events) ทุกครั้ง
+ * ช่องที่ผู้ใช้ไม่ได้พูดถึงคงค่าเดิม
+ */
+export async function doEditOrder(env, cmd, uid = null) {
+  const db = env.DB;
+  const id = orderRef(cmd);
+  if (!id) return 'ระบุเลขรายการด้วยครับ เช่น "รายการ 24 ราคา 3200"';
+
+  const o = cmd.order || {};
+  const row = await orderById(db, id);
+  // เลขที่ว่าง (ถูกลบไปแล้ว หรือเลขถัดไปที่ยังไม่มี) — จดเป็นรายการใหม่ลงเลขนั้น เหมือนทางแพตเทิร์นตายตัว
+  // เคยตอบว่า "ถูกยกเลิกไปแล้ว แก้ไม่ได้" ทั้งที่เจ้าของร้านตั้งใจจดลงบรรทัดที่ 6 ที่ว่างอยู่
+  if (!row || row.status === 'void') {
+    const set = {};
+    if (o.style) set.style = styleName(o.style);
+    if (normalizeChannel(o.channel)) set.channel = normalizeChannel(o.channel);
+    if (o.detail) set.detail = o.detail;
+    if (o.customer) set.customer = o.customer;
+    if (o.price > 0) set.price = toSatang(o.price);
+    if (isValidYmd(o.order_date)) set.order_date = o.order_date;
+    if (o.wage > 0) set.wage = toSatang(o.wage);
+    if (o.deposit > 0) set.deposit = toSatang(o.deposit);
+    return runOrderEdit(env, uid, {
+      ids: [id], set, paid: readPaid(o.paid), wagePaid: readPaid(o.wage_paid), shipped: readShipped(o.shipped),
+    }, todayBkk());
+  }
+
+  const want = {
+    style: o.style ?? undefined,
+    channel: normalizeChannel(o.channel) ?? undefined,
+    detail: o.detail ?? undefined,
+    customer: o.customer ?? undefined,
+    price: o.price > 0 ? toSatang(o.price) : undefined,
+    order_date: isValidYmd(o.order_date) ? o.order_date : undefined,
+    wage: o.wage > 0 ? toSatang(o.wage) : undefined,
+    deposit: o.deposit > 0 ? toSatang(o.deposit) : undefined,
+  };
+  // จ่ายแล้วเก็บเป็นวันที่ที่แจ้ง ติ๊กซ้ำไม่เลื่อนวัน ส่วน "ยังไม่จ่าย" คือเอาติ๊กออก
+  // ลูกค้าจ่ายค่าโบว์ (paid) กับร้านจ่ายค่าจ้างช่าง (wage_paid) เป็นสองช่องแยกกัน
+  const paid = readPaid(o.paid);
+  if (paid === true && !row.paid_at) want.paid_at = todayBkk();
+  if (paid === false && row.paid_at) want.paid_at = null;
+  const shipped = readShipped(o.shipped);
+  if (shipped === true && !row.shipped_at) want.shipped_at = todayBkk();
+  if (shipped === false && row.shipped_at) want.shipped_at = null;
+  const wagePaid = readPaid(o.wage_paid);
+  if (wagePaid === true && !row.wage_paid_at) want.wage_paid_at = todayBkk();
+  if (wagePaid === false && row.wage_paid_at) want.wage_paid_at = null;
+
+  const changes = {};
+  const diff = [];
+  for (const k of Object.keys(want)) {
+    if (want[k] === undefined || want[k] === row[k]) continue;
+    changes[k] = want[k];
+    diff.push(`${ORDER_LABEL[k]}: ${orderShow(k, row[k])} → ${orderShow(k, want[k])}`);
+  }
+  if (!diff.length) {
+    return `รายการ #${id} ตรงกับที่พิมพ์มาอยู่แล้ว ไม่มีอะไรเปลี่ยนครับ\n`
+      + 'ดูรูปแบบคำสั่งแก้ไข พิมพ์ "วิธีสั่งรายการ"';
+  }
+
+  const updated = await updateOrder(db, id, changes, diff.join(' | '));
+  if (!updated) return `รายการ #${id} ถูกยกเลิกไปก่อนหน้านี้แล้ว แก้ไม่ได้ครับ`;
+  await rememberOrderUndo(db, uid, `แก้รายการ #${id}`, { before: [row] });
+
+  // ตอบเฉพาะช่องที่เปลี่ยน ไม่แนบการ์ดหรือลิงก์ — อยากดูทั้งใบพิมพ์ "รายการ N"
+  return `✏️ แก้รายการ #${id} แล้ว\n${diff.join('\n')}`;
+}
+
+/** ลบรายการ = ยกเลิก ไม่ลบแถว และต้องยืนยันก่อน เพราะยกเลิกแล้วแก้กลับไม่ได้ */
+export async function doVoidOrder(env, uid, cmd) {
+  const db = env.DB;
+  const id = orderRef(cmd);
+  if (!id) return 'ระบุเลขรายการที่จะลบด้วยครับ เช่น "ลบรายการ 24"';
+
+  const row = await orderById(db, id);
+  if (!row) return `ไม่พบรายการ #${id}`;
+  if (row.status === 'void') {
+    return `รายการ #${id} ถูกยกเลิกไปแล้ว${row.void_reason ? ` (${row.void_reason})` : ''}`;
+  }
+
+  await savePending(db, uid, { kind: 'void_orders', ids: [id], reason: cmd.note ?? null });
+  return `จะลบรายการ #${id} · ${thaiDateNum(row.order_date)}\n${orderCard(row)}\n\n`
+    + 'รายการนี้จะหายจากตารางและยอดรวม แต่แถวยังเก็บไว้ให้ย้อนดูได้ในหน้าหลังบ้าน\n'
+    + 'พิมพ์ "ยืนยัน" เพื่อลบ';
+}
+
+/**
+ * ขอดูรายการ — ตอบสั้นๆ พร้อมลิงก์หน้าตาราง ไม่พิมพ์รายการเป็นข้อความยาว
+ * เพราะห้าช่องต่อหนึ่งรายการอ่านในแชตไม่รู้เรื่อง ต้องเห็นเป็นตารางเหมือนในสมุด
+ */
+async function doListOrders(env, cmd) {
+  const db = env.DB;
+  const asked = cmd?.order?.order_date;
+  const ym = isValidYmd(asked) ? asked.slice(0, 7) : monthBkk();
+  const rows = await monthOrders(db, ym);
+  if (!rows.length) {
+    return `${thaiMonth(ym)} ยังไม่มีรายการครับ\nจดได้เลย เช่น "สั่งโบว์แบบที่ 2 คุณเอ ทางไลน์ ราคา 2900"`;
+  }
+  const s = summarizeOrders(rows);
+  return `📋 รายการ ${thaiMonth(ym)}\n`
+    + `${s.count} รายการ · มีผู้สั่งแล้ว ${s.count - s.free} · ยังว่าง ${s.free}`
+    + (s.noPrice ? `\n(ยังไม่ใส่ราคา ${s.noPrice} รายการ)` : '')
+    + `\n\n💰 ราคาขายรวม ${fmtBaht(s.price)}`
+    + `\nจ่ายครบ ${fmtBaht(s.pricePaid)} (${s.paidCount} ชิ้น) · มัดจำ ${fmtBaht(s.deposit)} (${s.depositCount} ชิ้น)`
+    + `\nคงเหลือต้องเก็บ ${fmtBaht(s.remaining)}`
+    + `\n\n🚚 ส่งแล้ว ${s.shippedCount} / ${s.count} ชิ้น`
+    + `\n\n🧵 ค่าจ้างทำรวม ${fmtBaht(s.wage)}`
+    + `\nจ่ายแล้ว ${fmtBaht(s.wagePaid)} (${s.wagePaidCount} ชิ้น) · ค้างจ่าย ${fmtBaht(s.wage - s.wagePaid)}`
+    + `\n\nเปิดตาราง (พิมพ์หรือบันทึก PDF ได้จากในหน้า):\n${await orderSheetUrl(env, ym)}`;
+}
+
+const ORDER_LIST_MAX = 30;   // เกินนี้อ่านในแชตไม่ไหว ให้ไปดูในตาราง
+
+/** รายการหนึ่งชิ้นในหนึ่งบรรทัด ใช้ตอนเรียกดูเป็นรายชิ้น */
+const orderLine = (o, withWage) => `#${o.id} ${o.style}${o.detail ? ' ' + o.detail : ''}`
+  + ` · ${o.customer ?? 'ว่าง'}${o.channel ? ' ' + o.channel : ''}`
+  + ` · ${o.price != null ? fmtBaht(o.price) : '-'}${o.paid_at ? ' ✓' : ''}`
+  + (o.deposit != null && !o.paid_at ? ` (มัดจำ ${fmtBaht(o.deposit)} เหลือ ${fmtBaht(orderRemaining(o) ?? 0)})` : '')
+  + (o.shipped_at ? ' · ส่งแล้ว' : '')
+  + (withWage ? ` · จ้าง ${o.wage != null ? fmtBaht(o.wage) : '-'}${o.wage_paid_at ? ' ✓' : ''}` : '');
+
+/**
+ * เรียกดูรายการด้วยแพตเทิร์นตายตัว (ดู parseOrderView) — คืน null ถ้าไม่ใช่คำสั่งเรียกดู
+ *   ตารางรายการ [เดือน 10]   ยอดสรุป + ลิงก์ตาราง A4
+ *   รายการ 3                 ชิ้นเดียวทุกช่อง
+ *   รายการ ว่าง / ยังไม่จ่าย / ค้างค่าจ้าง / แบบ ML / ผู้สั่ง คุณเอ / ช่องทาง Line
+ */
+export async function doViewOrders(env, msg) {
+  const view = parseOrderView(msg, todayBkk());
+  if (!view) return null;
+  const db = env.DB;
+
+  if (view.kind === 'sheet') return doListOrders(env, { order: { order_date: view.ym + '-01' } });
+
+  if (view.kind === 'one') {
+    const row = await orderById(db, view.id);
+    if (!row) return `ไม่พบรายการ #${view.id}`;
+    return `📌 รายการ #${row.id} · ${thaiDateNum(row.order_date)}`
+      + (row.status === 'void' ? ' · ถูกลบแล้ว' : '') + `\n${orderCard(row)}`;
+  }
+
+  const title = `${orderViewTitle(view)} · ${thaiMonth(view.ym)}`;
+  const rows = filterOrders(await monthOrders(db, view.ym), view);
+  if (!rows.length) return `📋 ${title}\nไม่มีรายการครับ`;
+
+  const withWage = String(view.flag ?? '').startsWith('wage');
+  const sum = (k) => rows.reduce((a, r) => a + (r[k] ?? 0), 0);
+  const more = rows.length - ORDER_LIST_MAX;
+  return `📋 ${title} — ${rows.length} ชิ้น\n`
+    + rows.slice(0, ORDER_LIST_MAX).map((r) => orderLine(r, withWage)).join('\n')
+    + (more > 0 ? `\n…อีก ${more} ชิ้น ดูครบในตาราง พิมพ์ "ตารางรายการ"` : '')
+    + `\n\nรวมราคา ${fmtBaht(sum('price'))}` + (withWage ? ` · ค่าจ้าง ${fmtBaht(sum('wage'))}` : '');
+}
+
+/**
+ * ลบทีละหลายรายการ "ลบรายการ 9-23" / "ลบรายการ 2 5 8" — อ่านตรงๆ ไม่เรียก AI
+ * ยังต้องยืนยันก่อนเหมือนลบทีละใบ คืน null ถ้าไม่ใช่คำสั่งลบ
+ */
+export async function doVoidOrders(env, uid, msg) {
+  const cmd = parseOrderVoid(msg);
+  if (!cmd) return null;
+  if (cmd.error) return cmd.error;
+  const db = env.DB;
+
+  const rows = await ordersByIds(db, cmd.ids);
+  const live = rows.filter((r) => r.status === 'recorded').sort((a, b) => a.id - b.id);
+  const liveIds = new Set(live.map((r) => r.id));
+  const skip = cmd.ids.filter((id) => !liveIds.has(id));
+  if (!live.length) return `ไม่พบรายการที่ลบได้ครับ (${orderIdList(cmd.ids)} ไม่มีหรือถูกลบไปแล้ว)`;
+
+  await savePending(db, uid, { kind: 'void_orders', ids: live.map((r) => r.id), reason: cmd.reason });
+
+  // สรุปตามแบบ ให้เห็นว่ากำลังจะลบอะไรโดยไม่ต้องไล่อ่านทีละชิ้น
+  const byStyle = new Map();
+  for (const r of live) byStyle.set(r.style, [...(byStyle.get(r.style) ?? []), r.id]);
+  const named = live.filter((r) => r.customer).length;
+  return `จะลบ ${live.length} รายการ: ${orderIdList(live.map((r) => r.id))}\n`
+    + [...byStyle].map(([style, ids]) => `• ${style} ×${ids.length} (${orderIdList(ids)})`).join('\n')
+    + (named ? `\n⚠️ มีผู้สั่งแล้ว ${named} ชิ้น` : '')
+    + (skip.length ? `\nข้าม ${orderIdList(skip)} (ไม่มีหรือถูกลบไปแล้ว)` : '')
+    + '\n\nพิมพ์ "ยืนยัน" เพื่อลบ';
+}
+
+/**
+ * ย้อนกลับคำสั่งรายการทีละคำสั่ง จากล่าสุดถอยไป — จดผิดก็ลบแถวที่จดมา, แก้ผิดก็คืนค่าเดิม, ลบผิดก็เอากลับมา
+ * พิมพ์ซ้ำ = ถอยอีกหนึ่งคำสั่ง (เก็บไว้ ORDER_UNDO_DEPTH คำสั่ง) ถอยเกินพิมพ์ "เดินหน้า" กลับมาได้
+ * ไม่ต้องยืนยัน เพราะคำสั่งนี้คือทางแก้ของการสั่งผิดอยู่แล้ว และย้อนเกินก็เดินหน้าคืนได้
+ * แถวที่จดผิดถูก "ยกเลิก" ไม่ถูกลบจริง (หลักเดียวกับทั้งระบบ) เลขรายการจึงไม่ถูกนำกลับมาออกใหม่
+ */
+export async function doUndoOrder(env, uid) {
+  const db = env.DB;
+  const u = await nextOrderUndo(db, uid, 'undo');
+  if (!u) {
+    const { redo } = await orderUndoCounts(db, uid);
+    return 'ไม่มีคำสั่งรายการให้ย้อนกลับแล้วครับ'
+      + (redo ? `\nย้อนเกินไป พิมพ์ "เดินหน้า" ได้อีก ${redo} ครั้ง` : '');
+  }
+
+  // จำสภาพตอนนี้ของทุกแถวที่คำสั่งนั้นแตะไว้ก่อน — "เดินหน้า" จะคืนสภาพนี้
+  const ids = [...(u.created ?? []), ...(u.before ?? []).map((r) => r.id)];
+  const after = await ordersByIds(db, ids);
+
+  const voided_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  await updateOrdersBulk(db, [
+    ...(u.created ?? []).map((id) => ({
+      id, changes: { status: 'void', void_reason: 'ย้อนกลับ', voided_at }, text: 'ย้อนกลับ — ยกเลิกแถวที่จดมา',
+    })),
+    // คืนทั้งแถวตามที่เป็นก่อนคำสั่งนั้น รวมสถานะด้วย (ลบผิดก็กลับมา กู้ผิดก็กลับไปถูกลบ)
+    ...(u.before ?? []).map((row) => ({ id: row.id, changes: row, text: 'ย้อนกลับ — คืนค่าเดิม' })),
+  ], { anyStatus: true });
+  await markOrderUndo(db, u.id, 'undone', { created: u.created, before: u.before, after });
+
+  const next = await nextOrderUndo(db, uid, 'undo');
+  return `↩️ ย้อนกลับแล้ว: ${u.label}`
+    + (next ? `\nพิมพ์ "ย้อนกลับ" อีกครั้ง = ย้อน: ${next.label}` : '\nย้อนต่อไม่ได้แล้ว (ถึงคำสั่งแรกที่จำไว้)')
+    + '\nย้อนเกิน พิมพ์ "เดินหน้า"';
+}
+
+/** เดินหน้า = ทำคำสั่งที่เพิ่งย้อนไปกลับมาเหมือนเดิม ทีละคำสั่ง เรียงจากตัวที่ถูกย้อนหลังสุดกลับไป */
+export async function doRedoOrder(env, uid) {
+  const db = env.DB;
+  const u = await nextOrderUndo(db, uid, 'redo');
+  if (!u) return 'ไม่มีอะไรให้เดินหน้าครับ\nเดินหน้าได้เฉพาะหลังพิมพ์ "ย้อนกลับ" และยังไม่ได้สั่งคำสั่งรายการใหม่';
+
+  await updateOrdersBulk(db, (u.after ?? []).map((row) => ({ id: row.id, changes: row, text: 'เดินหน้า — ทำคำสั่งที่ย้อนไปอีกครั้ง' })),
+    { anyStatus: true });
+  await markOrderUndo(db, u.id, 'done');
+
+  const { redo } = await orderUndoCounts(db, uid);
+  return `↪️ เดินหน้าแล้ว: ${u.label}`
+    + (redo ? `\nเดินหน้าได้อีก ${redo} ครั้ง` : '\nกลับมาถึงจุดล่าสุดแล้ว');
+}
+
 // ---------- ยืนยัน ----------
 
 async function doConfirm(env, uid) {
@@ -1030,6 +1633,22 @@ async function doConfirm(env, uid) {
     if (!(await voidExpense(db, p.id, p.reason))) return `รายการที่ ${p.id} ถูกยกเลิกไปก่อนหน้านี้แล้ว`;
     return `🚫 ยกเลิกรายจ่ายรายการที่ ${p.id} แล้ว\n${expenseLine(row)}\n`
       + 'ยอดนี้ไม่นับในสรุปเดือนนั้นแล้ว แต่ยังเห็นในหน้ารายจ่ายว่าเคยลงไว้';
+  }
+
+  if (p.kind === 'void_orders') {
+    // อ่านใหม่ตอนยืนยัน — ระหว่างรออาจมีบางเลขถูกลบไปแล้ว
+    const live = (await ordersByIds(db, p.ids)).filter((r) => r.status === 'recorded');
+    if (!live.length) return 'รายการที่จะลบถูกยกเลิกไปก่อนหน้านี้แล้ว';
+    const voided_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    await updateOrdersBulk(db, live.map((r) => ({
+      id: r.id, changes: { status: 'void', void_reason: p.reason ?? null, voided_at },
+      text: 'ยกเลิก' + (p.reason ? ` — ${p.reason}` : ''),
+    })), { anyStatus: true });
+    const ids = live.map((r) => r.id);
+    await rememberOrderUndo(db, uid, `ลบรายการ ${orderIdList(ids)}`, { before: live });
+    const one = live.length === 1 ? ` (${live[0].style}${live[0].customer ? ' · ' + live[0].customer : ''})` : ` (${live.length} ชิ้น)`;
+    return `🚫 ลบรายการ ${orderIdList(ids)} แล้ว${one}\n`
+      + 'ไม่นับในตารางและยอดรวมแล้ว · ลบผิดพิมพ์ "ย้อนกลับ"';
   }
 
   if (p.kind === 'edit_expense') {
@@ -1136,6 +1755,22 @@ export async function handleText(env, uid, text, ctx = null) {
     return 'กำลังค้นให้ครับ ใช้เวลาประมาณ 1-3 นาที เจอแล้วจะส่งการ์ดมาให้';
   }
 
+  // รายการโบว์ — แพตเทิร์นตายตัวทั้งหมดอ่านตรงๆ ไม่เรียก AI (ดู order-text.js)
+  // เรียงจากเรียกดู -> ติ๊กจ่าย -> แก้ช่อง; ที่ไม่เข้าแพตเทิร์นไหลไปให้ AI อ่านตามเดิม
+  if (/^(วิธีสั่ง(?:รายการ|ออเดอร์|โบว์)|วิธีแก้(?:รายการ|ออเดอร์)|คู่มือ(?:รายการ|ออเดอร์)|คำสั่ง(?:รายการ|ออเดอร์)|ช่วย(?:รายการ|ออเดอร์)|(?:รายการ|ออเดอร์)\s*\?)$/.test(msg)) return ORDER_HELP;
+  if (/^(ย้อนกลับ|ย้อน|undo|back)(\s*(ครับ|ค่ะ|คะ))?$/i.test(msg)) return doUndoOrder(env, uid);
+  if (/^(เดินหน้า|ไปข้างหน้า|ทำซ้ำ|redo|forward)(\s*(ครับ|ค่ะ|คะ))?$/i.test(msg)) return doRedoOrder(env, uid);
+  if (/รายการ|ออเดอร์/.test(msg)) {
+    // ร่างเอกสารที่รอยืนยันก็เรียกบรรทัดของมันว่า "รายการที่ 2" — มีร่างค้างอยู่ให้ร่างได้อ่านก่อน
+    if ((await peekPending(db, uid))?.kind === 'doc') {
+      const draftEdit = await doEditDraft(env, uid, msg);
+      if (draftEdit) return draftEdit;
+    }
+    const orderAnswer = (await doViewOrders(env, msg)) ?? (await doVoidOrders(env, uid, msg))
+      ?? (await doMarkPaid(env, msg, uid)) ?? (await doOrderFields(env, msg, uid));
+    if (orderAnswer) return orderAnswer;
+  }
+
   // ขอแก้วันที่ของร่างที่รออยู่ — อ่านจากข้อความตรงๆ ไม่ต้องเรียก AI เหมือนกัน
   if (/^(วันที่|ลงวันที่|แก้วันที่|เปลี่ยนวันที่|ย้อนวันที่|ใช้วันที่)/.test(msg)) {
     const answer = await doSetIssueDate(env, uid, msg);
@@ -1168,9 +1803,13 @@ export async function handleText(env, uid, text, ctx = null) {
     case 'add_expense':   return doAddExpense(env, cmd);
     case 'void_expense':  return doVoidExpense(env, uid, cmd);
     case 'edit_expense':  return doEditExpense(env, uid, cmd);
+    case 'add_order':     return doAddOrder(env, cmd, uid);
+    case 'edit_order':    return doEditOrder(env, cmd, uid);
+    case 'void_order':    return doVoidOrder(env, uid, cmd);
+    case 'list_orders':   return doListOrders(env, cmd);
     case 'job_from_doc':  return doJobFromDoc(env, cmd);
     case 'update_job':    return doUpdateJob(env, cmd);
-    case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `🛠 งานค้าง (${thaiDate(todayBkk(), true)})`);
+    case 'list_jobs':     return jobListText(await openJobs(db), todayBkk(), `งานค้าง ${thaiDateNum(todayBkk())}`);
     case 'search':        return doSearch(env, cmd);
     case 'month_summary': return doMonthSummary(env);
     case 'add_holiday':   return doAddHoliday(env, cmd);
@@ -1183,7 +1822,7 @@ export async function morningDigest(env) {
   const today = todayBkk();
   const rows = await openJobs(env.DB, addDays(today, 1));
   if (!rows.length) return null;
-  return '🔔 ' + jobListText(rows, today, `งานที่ต้องดู (${thaiDate(today, true)})`);
+  return jobListText(rows, today, `งานที่ต้องดู ${thaiDateNum(today)}`);
 }
 
 /**
@@ -1196,15 +1835,8 @@ export async function eveningDigest(env) {
   const rows = await openJobs(env.DB);
   if (!rows.length) return null;
 
-  const late = rows.filter((j) => j.due_date && j.due_date < today).length;
-  const due = rows.filter((j) => j.due_date === today).length;
-  const head = [
-    `สรุปงานค้างเย็นนี้ (${thaiDate(today, true)})`,
-    late ? `❗ เลยกำหนด ${late} งาน` : null,
-    due ? `⏰ ครบกำหนดวันนี้ ${due} งาน` : null,
-  ].filter(Boolean).join('\n');
-
-  return '🌆 ' + jobListText(rows, today, head)
-    + '\n\nงานไหนเสร็จแล้วพิมพ์ปิดได้เลย เช่น "งาน ' + rows[0].id + ' เสร็จแล้ว"';
+  // ไม่สรุปจำนวนงานเลยกำหนด/ครบวันนี้ไว้หัวข้ออีก เพราะทุกบรรทัดติด ❗/⏰ อยู่แล้ว เห็นเองได้
+  return jobListText(rows, today, `สรุปงาน ${thaiDateNum(today)}`)
+    + `\n\nเสร็จแล้วพิมพ์ "งาน ${rows[0].id} เสร็จแล้ว"`;
 }
 

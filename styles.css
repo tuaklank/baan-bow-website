@@ -373,6 +373,15 @@
     box-shadow:0 30px 60px -20px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08);
     backdrop-filter:blur(6px);
   }
+  /* On a phone a full-width card looks like the whole section, and nothing
+     says there are more beside it. Narrowing the card and the gap leaves
+     roughly a sixth of the next one showing at the edge, which is the cue
+     to swipe sideways. The width is a share of the track, not the viewport,
+     so the peek holds whatever the page gutter is. */
+  @media (max-width:700px){
+    .slider-track{gap:14px;}
+    .p-card{width:80%;}
+  }
   .p-media{
     position:relative;border-radius:var(--r-card);overflow:hidden;
     background:var(--media-bg);box-shadow:var(--sh-media);
